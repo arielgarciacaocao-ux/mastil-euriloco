@@ -35,6 +35,7 @@ class Vigia : AccessibilityService() {
     private var fondo: ScheduledExecutorService? = null
 
     private var actual: Post? = null
+    private var actualId = ""        // id del evento en curso: también nombra su miniatura
     private var desdeReloj = 0L      // SystemClock: para medir duración
     private var desdeHora = 0L       // hora real: para registrar cuándo fue
     private var ultimoAnalisis = 0L
@@ -118,10 +119,26 @@ class Vigia : AccessibilityService() {
             cerrar()
             if (post != null) {
                 actual = post
+                actualId = UUID.randomUUID().toString()
                 desdeReloj = SystemClock.elapsedRealtime()
                 desdeHora = System.currentTimeMillis()
+                programarCaptura(actualId)
             }
+        } else if (post != null) {
+            actual = post // mismo post: se actualiza su posición y sus contadores
         }
+    }
+
+    /**
+     * Si seguís en el mismo post después de un rato, se saca su miniatura.
+     * Así solo se guardan imágenes de lo que de verdad te detuvo.
+     */
+    private fun programarCaptura(id: String) {
+        if (!Capturas.disponible()) return
+        principal.postDelayed({
+            val post = actual
+            if (post != null && actualId == id) post.marco?.let { Capturas.tomar(this, id, it) }
+        }, CAPTURA_TRAS_MS)
     }
 
     private fun guardarContacto(motivo: String) {
@@ -165,7 +182,7 @@ class Vigia : AccessibilityService() {
         val duracion = (SystemClock.elapsedRealtime() - desdeReloj).coerceAtMost(MAX_PERMANENCIA_MS)
         if (duracion < MIN_PERMANENCIA_MS) return
         val evento = JSONObject()
-            .put("id", UUID.randomUUID().toString())
+            .put("id", actualId)
             .put("red", "x")
             .put("inicio", desdeHora)
             .put("fin", desdeHora + duracion)
@@ -175,6 +192,10 @@ class Vigia : AccessibilityService() {
             .put("tiene_imagen", post.tieneImagen)
             .put("anuncio", post.anuncio)
             .put("medio", post.medio ?: JSONObject.NULL)
+            .put("vistas", post.vistas ?: JSONObject.NULL)
+            .put("verificada", post.verificada)
+            .put("traducido", post.traducido)
+            .put("pestana", post.pestana ?: JSONObject.NULL)
             .put("clave", post.clave)
         try {
             Registro.agregar(this, evento)
@@ -204,5 +225,7 @@ class Vigia : AccessibilityService() {
         const val MIN_PERMANENCIA_MS = 300L
         /** Más que esto, probablemente el teléfono quedó quieto sobre la mesa. */
         const val MAX_PERMANENCIA_MS = 10L * 60 * 1000
+        /** A partir de cuánto tiempo en un mismo post se saca su miniatura. */
+        const val CAPTURA_TRAS_MS = 2500L
     }
 }

@@ -44,13 +44,31 @@
   #qr { max-width: 240px; background: #fff; padding: 8px; border-radius: 8px; }
   #qr svg { width: 100%; }
   code { font-size: 12px; overflow-wrap: anywhere; }
+  .posts { display: flex; flex-direction: column; gap: 12px; }
+  .post { display: grid; grid-template-columns: 112px 1fr; gap: 14px; padding: 12px 0;
+          border-bottom: 1px solid var(--linea); }
+  .post:last-child { border-bottom: 0; }
+  .mini { width: 112px; height: 112px; border-radius: 8px; background: var(--fondo); border: 1px solid var(--linea);
+          display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--suave);
+          font-size: 12px; text-align: center; }
+  .mini img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+  .cabeza { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 4px; }
+  .cuenta { font-weight: 650; }
+  .dice { overflow-wrap: anywhere; }
+  .ve { color: var(--suave); font-style: italic; margin-top: 4px; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-size: 12px; color: var(--suave); border: 1px solid var(--linea); border-radius: 999px; padding: 1px 8px; }
+  .chip.fuerte { color: var(--tinta); border-color: var(--acento); }
+  select.etiqueta { font-size: 13px; padding: 2px 6px; }
+  select.etiqueta.puesta { border-color: var(--acento); color: var(--acento); font-weight: 600; }
+  @media (max-width: 560px) { .post { grid-template-columns: 80px 1fr; } .mini { width: 80px; height: 80px; } }
   .marca { font-size: 11px; font-weight: 600; color: var(--alerta); border: 1px solid var(--alerta);
            border-radius: 4px; padding: 0 4px; text-transform: uppercase; letter-spacing: .03em; }
 </style>
 </head>
 <body>
 <main>
-  <header><h1>Euríloco</h1><span class="rotulo">espejo · etapa 1</span></header>
+  <header><h1>Euríloco</h1><span class="rotulo">espejo · etapa 1 · v0.2</span></header>
   <p class="lema">Lo que tu atención hizo cuando no estabas mirando. Mástil observa; acá lo ves con calma.</p>
 
   <div class="controles">
@@ -84,6 +102,40 @@
   </section>
 
   <section class="tarjeta">
+    <h2>A dónde se va tu atención, por etiqueta</h2>
+    <p class="nota">Tiempo de permanencia según la etiqueta de cada cuenta. Lo que queda «sin etiqueta» es lo que falta clasificar.</p>
+    <div id="g-etiquetas"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Posts donde te detuviste: de qué van y qué señal dieron</h2>
+    <p class="nota">Cada uno le dijo a X «esto me interesa». Etiquetá la cuenta y la etiqueta vale para todos sus posts: de acá salen las cuerdas.
+      <span id="vision-estado"></span></p>
+    <div class="controles">
+      <label>Mostrar
+        <select id="filtro">
+          <option value="todos">todos</option>
+          <option value="sin">solo sin etiquetar</option>
+        </select>
+      </label>
+      <label>Cantidad
+        <select id="limite">
+          <option value="30">30</option>
+          <option value="60" selected>60</option>
+          <option value="150">150</option>
+        </select>
+      </label>
+    </div>
+    <div id="t-detenciones" class="posts"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Quién elige lo que ves</h2>
+    <p class="nota">«Para ti» lo arma el algoritmo; «Siguiendo» son cuentas que elegiste.</p>
+    <div id="g-pestanas"></div>
+  </section>
+
+  <section class="tarjeta">
     <h2>Tiempo frente a X, por día</h2>
     <p class="nota">Minutos de permanencia sobre posts. El tono fuerte marca el tiempo en detenciones largas.</p>
     <div id="g-dias"></div>
@@ -100,11 +152,6 @@
     <div id="g-cuentas"></div>
   </section>
 
-  <section class="tarjeta">
-    <h2>Últimas detenciones largas</h2>
-    <p class="nota">Material para la próxima sesión consciente: de acá van a salir tus primeras cuerdas.</p>
-    <div id="t-detenciones"></div>
-  </section>
 </main>
 
 <script>
@@ -158,7 +205,7 @@ const TRAMOS = ["menos de 1 s", "1 a 2 s", "2 a 3 s", "3 a 5 s", "5 a 10 s", "m�
 
 async function cargar() {
   const dias = $("dias").value, umbral = $("umbral").value;
-  const r = await fetch(`/panel/datos?dias=${dias}&umbral=${umbral}`);
+  const r = await fetch(`/panel/datos?dias=${dias}&umbral=${umbral}&limite=${$("limite").value}`);
   const d = await r.json();
 
   const total = d.por_dia.reduce((a, f) => a + f.total_ms, 0);
@@ -182,14 +229,77 @@ async function cargar() {
   $("g-tramos").innerHTML = posts ? barrasHorizontales(porTramo, f => f.t, f => f.n,
     f => f.n.toLocaleString("es-AR") + " posts") : vacio("Sin datos todavía.");
 
-  $("g-cuentas").innerHTML = barrasHorizontales(d.cuentas, f => f.cuenta, f => f.total_ms,
+  $("g-cuentas").innerHTML = barrasHorizontales(d.cuentas, f => f.cuenta + (f.etiqueta ? ` · ${f.etiqueta}` : ""), f => f.total_ms,
     f => `${fmtMin(f.total_ms)} · ${f.posts} posts`);
 
-  $("t-detenciones").innerHTML = d.detenciones.length ? `<table><thead><tr><th>Cuándo</th><th>Tiempo</th><th>Cuenta</th><th>Qué decía</th></tr></thead><tbody>` +
-    d.detenciones.map(e => `<tr><td class="num">${fmtFecha(e.inicio_ms)}</td><td class="num">${fmtSeg(e.permanencia_ms)}</td>` +
-      `<td>${esc(e.cuenta || "—")}</td><td class="texto">${e.anuncio ? "<span class='marca'>anuncio</span> " : ""}${esc((e.texto || "").slice(0, 280))}${e.medio ? ` <span class='rotulo'>[${esc(e.medio)}]</span>` : (e.tiene_imagen ? " <span class='rotulo'>[imagen]</span>" : "")}</td></tr>`).join("") +
-    "</tbody></table>" : vacio("Ninguna detención larga en el período.");
+  ultimo = d;
+  pintarPosts();
+
+  $("g-etiquetas").innerHTML = d.por_etiqueta.length ? barrasHorizontales(d.por_etiqueta, f => f.etiqueta, f => f.total_ms,
+    f => `${fmtMin(f.total_ms)} · ${f.posts} posts`) : vacio("Sin datos todavía.");
+  $("g-pestanas").innerHTML = d.por_pestana.length ? barrasHorizontales(d.por_pestana, f => f.pestana, f => f.total_ms,
+    f => `${fmtMin(f.total_ms)} · ${f.posts} posts`) : vacio("Sin datos todavía.");
+  $("vision-estado").textContent = d.descripciones_pendientes
+    ? `Miniaturas esperando descripción: ${d.descripciones_pendientes}.` : "";
 }
+
+let ultimo = null;
+
+function alcance(n) {
+  if (n == null) return null;
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(".", ",").replace(",0", "") + " M";
+  if (n >= 1e3) return Math.round(n / 1e3) + " mil";
+  return String(n);
+}
+
+function selectorEtiqueta(e) {
+  if (!e.cuenta) return "";
+  const opciones = ["", ...ultimo.etiquetas, "otra…"].map(t =>
+    `<option value="${esc(t)}" ${t === (e.etiqueta || "") ? "selected" : ""}>${t ? esc(t) : "sin etiqueta"}</option>`).join("");
+  return `<select class="etiqueta ${e.etiqueta ? "puesta" : ""}" data-cuenta="${esc(e.cuenta)}">${opciones}</select>`;
+}
+
+function pintarPosts() {
+  const d = ultimo;
+  let lista = d.detenciones;
+  if ($("filtro").value === "sin") lista = lista.filter(e => !e.etiqueta && e.cuenta);
+  if (!lista.length) { $("t-detenciones").innerHTML = vacio("Nada para mostrar en este período."); return; }
+  $("t-detenciones").innerHTML = lista.map(e => {
+    const mini = e.captura
+      ? `<a class="mini" href="/panel/captura/${esc(e.id)}.jpg" target="_blank" rel="noopener"><img loading="lazy" src="/panel/captura/${esc(e.id)}.jpg" alt="miniatura"></a>`
+      : `<div class="mini">${e.medio ? esc(e.medio) : "sin miniatura"}</div>`;
+    const chips = [
+      `<span class="chip fuerte">te quedaste ${fmtSeg(e.permanencia_ms)}</span>`,
+      e.pestana ? `<span class="chip">${esc(e.pestana)}</span>` : "",
+      alcance(e.vistas) ? `<span class="chip">alcance ${alcance(e.vistas)}</span>` : "",
+      e.verificada ? `<span class="chip">verificada</span>` : "",
+      e.traducido ? `<span class="chip">traducido</span>` : "",
+      e.medio ? `<span class="chip">${esc(e.medio)}</span>` : "",
+      e.anuncio ? `<span class="marca">anuncio</span>` : "",
+    ].join("");
+    return `<div class="post">${mini}<div>
+      <div class="cabeza"><span class="cuenta">${esc(e.cuenta || "cuenta desconocida")}</span>
+        <span class="rotulo">${fmtFecha(e.inicio_ms)}</span>${selectorEtiqueta(e)}</div>
+      <div class="dice">${esc((e.texto || "").slice(0, 400))}</div>
+      ${e.descripcion ? `<div class="ve">Euríloco ve: ${esc(e.descripcion)}</div>` : ""}
+      <div class="chips">${chips}</div></div></div>`;
+  }).join("");
+}
+
+$("t-detenciones").addEventListener("change", async (ev) => {
+  const sel = ev.target.closest("select.etiqueta");
+  if (!sel) return;
+  let etiqueta = sel.value;
+  if (etiqueta === "otra…") {
+    etiqueta = (prompt("Nombre de la etiqueta nueva:") || "").trim();
+    if (!etiqueta) { pintarPosts(); return; }
+  }
+  await fetch("/panel/etiqueta", { method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ cuenta: sel.dataset.cuenta, etiqueta }) });
+  cargar();
+});
+$("filtro").addEventListener("change", pintarPosts);
+$("limite").addEventListener("change", () => cargar());
 
 $("dias").addEventListener("change", cargar);
 $("umbral").addEventListener("change", cargar);
@@ -202,7 +312,8 @@ $("emparejar").addEventListener("click", async () => {
   $("enlace").textContent = d.enlace;
 });
 cargar();
-setInterval(cargar, 60000);
+// Refresca solo cada minuto, y nunca mientras estás eligiendo una etiqueta.
+setInterval(() => { if (!document.activeElement?.matches?.("select.etiqueta")) cargar(); }, 60000);
 </script>
 </body>
 </html>

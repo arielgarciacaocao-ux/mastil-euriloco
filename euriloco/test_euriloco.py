@@ -112,12 +112,151 @@ class PruebaEuriloco(unittest.TestCase):
         import sqlite3
         ruta = Path(self.tmp.name) / "vieja.db"
         con = sqlite3.connect(ruta)
-        con.executescript(euriloco.ESQUEMA.replace(",\n    anuncio       INTEGER NOT NULL DEFAULT 0,\n    medio         TEXT", ""))
+        viejo = euriloco.ESQUEMA.split("anuncio       INTEGER")[0].rstrip().rstrip(",") + "\n);"
+        con.executescript(viejo)
         con.execute("INSERT INTO eventos (id, red, inicio_ms, fin_ms, permanencia_ms, recibido_ms) VALUES ('v', 'x', 1, 2, 1, 3)")
         con.commit(); con.close()
         m = euriloco.Memoria(ruta)
-        fila = m.consulta("SELECT id, anuncio, medio FROM eventos")[0]
-        self.assertEqual(fila, {"id": "v", "anuncio": 0, "medio": None})
+        fila = m.consulta("SELECT id, anuncio, medio, vistas, captura, descripcion FROM eventos")[0]
+        self.assertEqual(fila, {"id": "v", "anuncio": 0, "medio": None, "vistas": None,
+                                "captura": 0, "descripcion": None})
+
+    # ---- 0.2: miniaturas, señales, etiquetas, visión
+
+    JPEG = b"\xff\xd8\xff\xe0" + b"0" * 200
+
+    def subir(self, id_, datos, clave="ok"):
+        cab = {"Content-Type": "image/jpeg"}
+        if clave == "ok":
+            cab["Authorization"] = "Bearer " + self.config["clave"]
+        req = urllib.request.Request(f"{self.base}/api/captura?id={id_}", data=datos, headers=cab)
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def id_evento(self, i):
+        return f"0000000{i}-aaaa-bbbb-cccc-dddddddddddd"
+
+    def test_miniatura_se_guarda_y_se_sirve(self):
+        e = self.evento(1, 5000)
+        e["id"] = self.id_evento(1)
+        self.pedir("/api/eventos", {"eventos": [e]})
+        self.assertEqual(self.subir(e["id"], self.JPEG), 200)
+        with urllib.request.urlopen(f"{self.base}/panel/captura/{e['id']}.jpg") as r:
+            self.assertEqual(r.read(), self.JPEG)
+        with urllib.request.urlopen(self.base + "/panel/datos?dias=7") as r:
+            d = json.loads(r.read())
+        self.assertEqual(d["detenciones"][0]["captura"], 1)
+        self.assertEqual(d["descripciones_pendientes"], 1)
+
+    def test_miniatura_invalida(self):
+        self.assertEqual(self.subir(self.id_evento(1), self.JPEG, clave=None), 401)
+        self.assertEqual(self.subir(self.id_evento(1), b"<html>no es imagen</html>"), 400)
+        self.assertEqual(self.subir("../../etc/passwd", self.JPEG), 400)
+        self.assertEqual(urllib.request.urlopen.__name__, "urlopen")
+        with self.assertRaises(urllib.error.HTTPError):
+            urllib.request.urlopen(f"{self.base}/panel/captura/..%2F..%2Fx.jpg")
+
+    def test_senales_se_guardan(self):
+        e = self.evento(1, 6000, "@viral")
+        e.update({"vistas": 3500000, "verificada": True, "traducido": True, "pestana": "para ti"})
+        self.pedir("/api/eventos", {"eventos": [e, self.evento(2, 4000, "@amigo")]})
+        with urllib.request.urlopen(self.base + "/panel/datos?dias=7") as r:
+            d = json.loads(r.read())
+        viral = [x for x in d["detenciones"] if x["cuenta"] == "@viral"][0]
+        self.assertEqual((viral["vistas"], viral["verificada"], viral["traducido"], viral["pestana"]),
+                         (3500000, 1, 1, "para ti"))
+        self.assertEqual({p["pestana"] for p in d["por_pestana"]}, {"para ti", "sin dato"})
+
+    def etiquetar(self, cuenta, etiqueta):
+        req = urllib.request.Request(self.base + "/panel/etiqueta",
+                                     data=json.dumps({"cuenta": cuenta, "etiqueta": etiqueta}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_etiquetas(self):
+        self.pedir("/api/eventos", {"eventos": [self.evento(1, 9000, "@cebo"), self.evento(2, 4000, "@cebo"),
+                                                self.evento(3, 5000, "@sabio")]})
+        self.assertEqual(self.etiquetar("@cebo", "  Anzuelo ")[0], 200)
+        self.assertEqual(self.etiquetar("@nuevo", "Mi Etiqueta")[1]["etiqueta"], "mi etiqueta")
+        self.assertEqual(self.etiquetar("sin-arroba", "x")[0], 400)
+        with urllib.request.urlopen(self.base + "/panel/datos?dias=7") as r:
+            d = json.loads(r.read())
+        tiempos = {f["etiqueta"]: f["total_ms"] for f in d["por_etiqueta"]}
+        self.assertEqual(tiempos, {"anzuelo": 13000, "sin etiqueta": 5000})
+        self.assertIn("mi etiqueta", d["etiquetas"])
+        self.assertEqual([c["etiqueta"] for c in d["cuentas"] if c["cuenta"] == "@cebo"], ["anzuelo"])
+        self.etiquetar("@cebo", "")
+        with urllib.request.urlopen(self.base + "/panel/datos?dias=7") as r:
+            d = json.loads(r.read())
+        self.assertEqual({f["etiqueta"] for f in d["por_etiqueta"]}, {"sin etiqueta"})
+
+    def test_vision_con_ollama_simulado(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        pedidos = []
+
+        class FalsoOllama(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def responder(self, datos):
+                cuerpo = json.dumps(datos).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(cuerpo)))
+                self.end_headers()
+                self.wfile.write(cuerpo)
+
+            def do_GET(self):
+                self.responder({"models": [{"name": "moondream:latest"}]})
+
+            def do_POST(self):
+                pedidos.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.responder({"response": "  Una persona   bailando en una cocina. "})
+
+        falso = ThreadingHTTPServer(("127.0.0.1", 0), FalsoOllama)
+        threading.Thread(target=falso.serve_forever, daemon=True).start()
+        try:
+            vision = dict(euriloco.VISION_POR_DEFECTO, url=f"http://127.0.0.1:{falso.server_address[1]}")
+            self.assertTrue(euriloco.modelo_disponible(vision))
+            e = self.evento(1, 5000)
+            e["id"] = self.id_evento(1)
+            self.pedir("/api/eventos", {"eventos": [e]})
+            self.subir(e["id"], self.JPEG)
+            memoria = self.servidor.RequestHandlerClass.memoria
+            capturas = self.servidor.RequestHandlerClass.dir_capturas
+            self.assertEqual(euriloco.describir_pendientes(memoria, capturas, vision), 1)
+            self.assertEqual(euriloco.describir_pendientes(memoria, capturas, vision), 0)
+            fila = memoria.consulta("SELECT descripcion FROM eventos")[0]
+            self.assertEqual(fila["descripcion"], "Una persona bailando en una cocina.")
+            self.assertEqual(pedidos[0]["model"], "moondream")
+            self.assertEqual(len(pedidos[0]["images"]), 1)
+        finally:
+            falso.shutdown()
+            falso.server_close()
+
+    def test_sin_ollama_no_falla(self):
+        vision = dict(euriloco.VISION_POR_DEFECTO, url="http://127.0.0.1:9")
+        self.assertFalse(euriloco.modelo_disponible(vision))
+
+    def test_poda_de_miniaturas(self):
+        import os
+        e = self.evento(1, 5000)
+        e["id"] = self.id_evento(1)
+        self.pedir("/api/eventos", {"eventos": [e]})
+        self.subir(e["id"], self.JPEG)
+        h = self.servidor.RequestHandlerClass
+        archivo = h.dir_capturas / f"{e['id']}.jpg"
+        viejo = time.time() - 90 * 86400
+        os.utime(archivo, (viejo, viejo))
+        self.assertEqual(euriloco.podar_capturas(h.memoria, h.dir_capturas, 60), 1)
+        self.assertFalse(archivo.exists())
+        self.assertEqual(h.memoria.consulta("SELECT captura FROM eventos")[0]["captura"], 0)
 
     def test_texto_largo_se_recorta(self):
         e = self.evento(1, 1000)

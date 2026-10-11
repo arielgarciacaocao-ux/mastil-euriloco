@@ -39,6 +39,16 @@ object Sincro {
                 enviados += lote.size
                 pendientes = Registro.pendientes(c)
             }
+            // Miniaturas: después de los eventos, para que Euríloco ya conozca cada post.
+            Capturas.podar(c)
+            var imagenes = 0
+            for (f in Capturas.pendientes(c)) {
+                val id = f.name.removeSuffix(".jpg")
+                pedirBytes(c, host, "/api/captura?id=$id", f.readBytes())
+                    ?: return "Se cortó la conexión mientras mandaba miniaturas; se reintenta más tarde."
+                f.delete()
+                imagenes++
+            }
             // Las cuerdas todavía no actúan en la etapa 1, pero ya se guardan.
             pedir(c, host, "GET", "/api/cuerdas", null)?.let { r ->
                 val json = JSONObject(r)
@@ -46,8 +56,8 @@ object Sincro {
                 c.cuerdasVersion = json.optString("version")
             }
             c.ultimaSincro = System.currentTimeMillis()
-            return if (enviados == 0) "Sincronizado: no había eventos nuevos."
-            else "Sincronizado: $enviados eventos enviados a Euríloco."
+            return if (enviados == 0 && imagenes == 0) "Sincronizado: no había eventos nuevos."
+            else "Sincronizado: $enviados eventos y $imagenes miniaturas enviados a Euríloco."
         } finally {
             enCurso.set(false)
         }
@@ -56,6 +66,27 @@ object Sincro {
     /** Primera dirección que responde con la clave correcta. */
     private fun elegirHost(c: Context): String? =
         Config.hosts(c).firstOrNull { pedir(c, it, "GET", "/api/estado", null) != null }
+
+    private fun pedirBytes(c: Context, host: String, ruta: String, datos: ByteArray): String? {
+        var con: HttpURLConnection? = null
+        return try {
+            con = URI.create("http://$host$ruta").toURL().openConnection() as HttpURLConnection
+            con.requestMethod = "POST"
+            con.connectTimeout = 4000
+            con.readTimeout = 15000
+            con.setRequestProperty("Authorization", "Bearer " + Config.clave(c))
+            con.setRequestProperty("Content-Type", "image/jpeg")
+            con.doOutput = true
+            con.setFixedLengthStreamingMode(datos.size)
+            con.outputStream.use { it.write(datos) }
+            if (con.responseCode != 200) null
+            else con.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (e: Exception) {
+            null
+        } finally {
+            con?.disconnect()
+        }
+    }
 
     private fun pedir(c: Context, host: String, metodo: String, ruta: String, cuerpo: String?): String? {
         var con: HttpURLConnection? = null

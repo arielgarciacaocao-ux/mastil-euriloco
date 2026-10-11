@@ -12,6 +12,12 @@ data class Post(
     val tieneImagen: Boolean,
     val anuncio: Boolean = false,
     val medio: String? = null,
+    val vistas: Long? = null,
+    val verificada: Boolean = false,
+    val traducido: Boolean = false,
+    val pestana: String? = null,
+    /** Dónde está el post en la pantalla, para la miniatura. */
+    val marco: Rect? = null,
 )
 
 /**
@@ -49,7 +55,7 @@ object AdaptadorX {
             val r = Rect()
             fila.getBoundsInScreen(r)
             if (medio >= r.top && medio <= r.bottom) {
-                val post = armarPost(fila, r)
+                val post = armarPost(fila, r)?.copy(pestana = pestanaActual(raiz))
                 diagnostico = if (post != null) "Leyendo bien (lista $clase, ${lista.childCount} filas)."
                 else "Encuentro el feed ($clase), pero la fila del centro no tiene texto legible."
                 return post
@@ -113,7 +119,49 @@ object AdaptadorX {
         val limpio = Limpieza.limpiar(textos, MAX_TEXTO)
         if (limpio.texto.length < 8) return null
         return Post(clave = huella(limpio.firma), cuenta = limpio.cuenta, texto = limpio.texto,
-            tieneImagen = imagen || limpio.medio != null, anuncio = limpio.anuncio, medio = limpio.medio)
+            tieneImagen = imagen || limpio.medio != null, anuncio = limpio.anuncio, medio = limpio.medio,
+            vistas = limpio.vistas, verificada = limpio.verificada, traducido = limpio.traducido,
+            marco = Rect(marco))
+    }
+
+    private val PESTANAS = mapOf("para ti" to "para ti", "for you" to "para ti",
+        "siguiendo" to "siguiendo", "following" to "siguiendo")
+    private var pestanaCache: String? = null
+    private var pestanaMomento = 0L
+
+    /**
+     * En qué pestaña del inicio está el feed: «Para ti» (lo elige el algoritmo) o «Siguiendo»
+     * (cuentas que seguís). Se recalcula como mucho cada 2 segundos.
+     */
+    private fun pestanaActual(raiz: AccessibilityNodeInfo): String? {
+        val ahora = System.currentTimeMillis()
+        if (ahora - pestanaMomento < 2000) return pestanaCache
+        pestanaMomento = ahora
+        var hallada: String? = null
+        var vistaAlguna = false
+        val cola = ArrayDeque<AccessibilityNodeInfo>()
+        cola.add(raiz)
+        var vistos = 0
+        while (cola.isNotEmpty() && vistos < 1500 && hallada == null) {
+            val n = cola.removeFirst()
+            vistos++
+            val etiqueta = (n.text ?: n.contentDescription)?.toString()?.trim()?.lowercase()
+            val pestana = PESTANAS[etiqueta]
+            if (pestana != null) {
+                vistaAlguna = true
+                if (n.isSelected || n.parent?.isSelected == true) hallada = pestana
+            }
+            if (n.isScrollable && n.childCount > 3) {
+                // No recorrer el feed entero (alto); la barra de pestañas (ancha) sí.
+                val r = Rect()
+                n.getBoundsInScreen(r)
+                if (r.height() > r.width() / 2) continue
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
+        }
+        // Si no hay pestañas a la vista, es otra pantalla: perfil, búsqueda, un hilo.
+        pestanaCache = hallada ?: if (vistaAlguna) null else "otra pantalla"
+        return pestanaCache
     }
 
     private fun huella(s: String): String {

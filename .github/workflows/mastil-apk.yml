@@ -9,6 +9,9 @@ on:
       - ".github/workflows/mastil-apk.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -31,3 +34,16 @@ jobs:
         with:
           name: mastil-apk
           path: mastil/app/build/outputs/apk/debug/app-debug.apk
+
+      # Deja siempre la última versión en Releases, para bajarla directo desde el teléfono.
+      - name: Publicar en Releases
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp mastil/app/build/outputs/apk/debug/app-debug.apk mastil.apk
+          gh release delete mastil-ultima --yes --cleanup-tag || true
+          gh release create mastil-ultima mastil.apk \
+            --title "Mástil · última versión" \
+            --notes "Instalador de Mástil compilado a partir de ${GITHUB_SHA::7}. Desde el teléfono: tocá mastil.apk para descargarlo e instalarlo." \
+            --target "$GITHUB_SHA"

@@ -46,7 +46,7 @@ La app hay que compilarla una vez para obtener el instalador (el archivo `.apk`)
 
 1. En el repositorio, «Add file» › «Upload files» y arrastrá **el contenido** de la carpeta `mastil-euriloco`. Ojo: la carpeta `.github` está oculta; en el explorador de archivos activá «mostrar archivos ocultos» (Ctrl+H) para poder arrastrarla.
 2. Andá a la pestaña **Actions**. Vas a ver «Compilar Mástil» corriendo; tarda unos 5 minutos.
-3. Cuando termine con una tilde verde, entrá y descargá **mastil-apk** (abajo de todo, en «Artifacts»). Es un zip con `app-debug.apk` adentro.
+3. Cuando termine con una tilde verde, el instalador queda publicado en la sección **Releases** del repositorio, como `mastil.apk`. Desde el teléfono: abrí el repositorio, tocá «Releases» y después `mastil.apk`.
 
 ---
 

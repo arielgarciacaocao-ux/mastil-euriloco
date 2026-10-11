@@ -10,6 +10,8 @@ data class Post(
     val cuenta: String?,
     val texto: String,
     val tieneImagen: Boolean,
+    val anuncio: Boolean = false,
+    val medio: String? = null,
 )
 
 /**
@@ -23,7 +25,6 @@ data class Post(
 object AdaptadorX {
     const val PAQUETE = "com.twitter.android"
 
-    private val HANDLE = Regex("@[A-Za-z0-9_]{1,15}")
     private const val MAX_NODOS_PANTALLA = 4000
     private const val MAX_NODOS_POST = 600
     private const val MAX_TEXTO = 1000
@@ -109,11 +110,10 @@ object AdaptadorX {
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
         }
-        val texto = textos.distinct().joinToString(" · ").take(MAX_TEXTO)
-        if (texto.length < 8) return null
-        val cuenta = HANDLE.find(texto)?.value
-        return Post(clave = huella((cuenta ?: "") + "|" + texto.take(160)), cuenta = cuenta,
-            texto = texto, tieneImagen = imagen)
+        val limpio = Limpieza.limpiar(textos, MAX_TEXTO)
+        if (limpio.texto.length < 8) return null
+        return Post(clave = huella(limpio.firma), cuenta = limpio.cuenta, texto = limpio.texto,
+            tieneImagen = imagen || limpio.medio != null, anuncio = limpio.anuncio, medio = limpio.medio)
     }
 
     private fun huella(s: String): String {

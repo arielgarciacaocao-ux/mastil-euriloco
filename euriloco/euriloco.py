@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 PUERTO_POR_DEFECTO = 8737
 MAX_CUERPO = 5 * 1024 * 1024  # 5 MB por lote de eventos
 MAX_TEXTO = 1000              # caracteres guardados por post
@@ -99,7 +99,9 @@ CREATE TABLE IF NOT EXISTS eventos (
     texto         TEXT,
     tiene_imagen  INTEGER NOT NULL DEFAULT 0,
     clave         TEXT,
-    recibido_ms   INTEGER NOT NULL
+    recibido_ms   INTEGER NOT NULL,
+    anuncio       INTEGER NOT NULL DEFAULT 0,
+    medio         TEXT
 );
 CREATE INDEX IF NOT EXISTS eventos_inicio ON eventos(inicio_ms);
 CREATE INDEX IF NOT EXISTS eventos_cuenta ON eventos(cuenta);
@@ -120,7 +122,17 @@ class Memoria:
         self.con = sqlite3.connect(str(ruta), check_same_thread=False)
         self.con.row_factory = sqlite3.Row
         self.con.executescript(ESQUEMA)
+        self._migrar()
         self.candado = threading.Lock()
+
+    def _migrar(self) -> None:
+        """Agrega las columnas nuevas a una base creada por una versión anterior, sin tocar los datos."""
+        columnas = {f[1] for f in self.con.execute("PRAGMA table_info(eventos)")}
+        if "anuncio" not in columnas:
+            self.con.execute("ALTER TABLE eventos ADD COLUMN anuncio INTEGER NOT NULL DEFAULT 0")
+        if "medio" not in columnas:
+            self.con.execute("ALTER TABLE eventos ADD COLUMN medio TEXT")
+        self.con.commit()
 
     def guardar_lote(self, dispositivo: str, eventos: list) -> tuple[int, int]:
         ahora = int(time.time() * 1000)
@@ -130,12 +142,14 @@ class Memoria:
             if fila:
                 filas.append((fila["id"], dispositivo, fila["red"], fila["inicio"], fila["fin"],
                               fila["permanencia_ms"], fila["cuenta"], fila["texto"],
-                              1 if fila["tiene_imagen"] else 0, fila["clave"], ahora))
+                              1 if fila["tiene_imagen"] else 0, fila["clave"], ahora,
+                              1 if fila["anuncio"] else 0, fila["medio"]))
         with self.candado:
             antes = self.con.total_changes
             self.con.executemany(
                 "INSERT OR IGNORE INTO eventos (id, dispositivo, red, inicio_ms, fin_ms, permanencia_ms,"
-                " cuenta, texto, tiene_imagen, clave, recibido_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)", filas)
+                " cuenta, texto, tiene_imagen, clave, recibido_ms, anuncio, medio)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", filas)
             nuevos = self.con.total_changes - antes
             self.con.execute("INSERT INTO sincros VALUES (?,?,?,?)", (ahora, dispositivo, len(eventos), nuevos))
             self.con.commit()
@@ -166,7 +180,10 @@ def validar_evento(e) -> dict | None:
     texto = str(texto)[:MAX_TEXTO] if texto else None
     clave = e.get("clave")
     clave = str(clave)[:64] if clave else None
-    return {"id": id_, "red": red, "inicio": inicio, "fin": fin, "permanencia_ms": permanencia,
+    medio = e.get("medio")
+    medio = str(medio)[:16] if medio else None
+    return {"anuncio": bool(e.get("anuncio")), "medio": medio,
+            "id": id_, "red": red, "inicio": inicio, "fin": fin, "permanencia_ms": permanencia,
             "cuenta": cuenta, "texto": texto, "tiene_imagen": bool(e.get("tiene_imagen")), "clave": clave}
 
 
@@ -189,17 +206,20 @@ def datos_espejo(memoria: Memoria, dias: int = 30, umbral_ms: int = 3000, zona_s
         "FROM eventos WHERE inicio_ms >= ? AND cuenta IS NOT NULL "
         "GROUP BY cuenta ORDER BY total_ms DESC LIMIT 12", (desde,))
     detenciones = memoria.consulta(
-        "SELECT inicio_ms, permanencia_ms, cuenta, texto, tiene_imagen FROM eventos "
+        "SELECT inicio_ms, permanencia_ms, cuenta, texto, tiene_imagen, anuncio, medio FROM eventos "
         "WHERE permanencia_ms >= ? ORDER BY inicio_ms DESC LIMIT 40", (umbral_ms,))
     tramos = memoria.consulta(
         "SELECT CASE WHEN permanencia_ms < 1000 THEN 0 WHEN permanencia_ms < 2000 THEN 1 "
         " WHEN permanencia_ms < 3000 THEN 2 WHEN permanencia_ms < 5000 THEN 3 "
         " WHEN permanencia_ms < 10000 THEN 4 ELSE 5 END AS tramo, COUNT(*) AS posts "
         "FROM eventos WHERE inicio_ms >= ? GROUP BY tramo ORDER BY tramo", (desde,))
+    anuncios = memoria.consulta(
+        "SELECT COUNT(*) AS posts, COALESCE(SUM(permanencia_ms), 0) AS total_ms "
+        "FROM eventos WHERE inicio_ms >= ? AND anuncio = 1", (desde,))[0]
     ultima = memoria.consulta("SELECT momento_ms, recibidos, nuevos FROM sincros ORDER BY momento_ms DESC LIMIT 1")
     total = memoria.consulta("SELECT COUNT(*) AS n FROM eventos")[0]["n"]
     return {"dias": dias, "umbral_ms": umbral_ms, "por_dia": por_dia, "cuentas": cuentas,
-            "detenciones": detenciones, "tramos": tramos,
+            "detenciones": detenciones, "tramos": tramos, "anuncios": anuncios,
             "ultima_sincro": ultima[0] if ultima else None, "eventos_total": total}
 
 

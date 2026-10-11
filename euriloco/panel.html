@@ -44,6 +44,8 @@
   #qr { max-width: 240px; background: #fff; padding: 8px; border-radius: 8px; }
   #qr svg { width: 100%; }
   code { font-size: 12px; overflow-wrap: anywhere; }
+  .marca { font-size: 11px; font-weight: 600; color: var(--alerta); border: 1px solid var(--alerta);
+           border-radius: 4px; padding: 0 4px; text-transform: uppercase; letter-spacing: .03em; }
 </style>
 </head>
 <body>
@@ -167,6 +169,7 @@ async function cargar() {
     [fmtMin(total), "frente a posts"], [posts.toLocaleString("es-AR"), "posts vistos"],
     [det.toLocaleString("es-AR"), `detenciones de ${umbral / 1000} s o más`],
     [posts ? Math.round(100 * det / posts) + " %" : "—", "de los posts te detuvieron"],
+    [(d.anuncios?.posts || 0).toLocaleString("es-AR") + " · " + fmtMin(d.anuncios?.total_ms || 0), "anuncios vistos · tiempo"],
     [sincro, "última sincronización"],
   ].map(([c, r]) => `<div><div class="cifra">${esc(c)}</div><div class="rotulo">${esc(r)}</div></div>`).join("");
 
@@ -184,7 +187,7 @@ async function cargar() {
 
   $("t-detenciones").innerHTML = d.detenciones.length ? `<table><thead><tr><th>Cuándo</th><th>Tiempo</th><th>Cuenta</th><th>Qué decía</th></tr></thead><tbody>` +
     d.detenciones.map(e => `<tr><td class="num">${fmtFecha(e.inicio_ms)}</td><td class="num">${fmtSeg(e.permanencia_ms)}</td>` +
-      `<td>${esc(e.cuenta || "—")}</td><td class="texto">${esc((e.texto || "").slice(0, 220))}${e.tiene_imagen ? " <span class='rotulo'>[imagen]</span>" : ""}</td></tr>`).join("") +
+      `<td>${esc(e.cuenta || "—")}</td><td class="texto">${e.anuncio ? "<span class='marca'>anuncio</span> " : ""}${esc((e.texto || "").slice(0, 280))}${e.medio ? ` <span class='rotulo'>[${esc(e.medio)}]</span>` : (e.tiene_imagen ? " <span class='rotulo'>[imagen]</span>" : "")}</td></tr>`).join("") +
     "</tbody></table>" : vacio("Ninguna detención larga en el período.");
 }
 

@@ -98,6 +98,27 @@ class PruebaEuriloco(unittest.TestCase):
         self.assertTrue(d["enlace"].startswith("mastil://emparejar?h="))
         self.assertIn(self.config["clave"], d["enlace"])
 
+    def test_anuncio_y_medio(self):
+        e = self.evento(1, 4000, "@Starlink")
+        e.update({"anuncio": True, "medio": "video"})
+        self.pedir("/api/eventos", {"eventos": [e, self.evento(2, 3500)]})
+        with urllib.request.urlopen(self.base + "/panel/datos?dias=7&umbral=3000") as r:
+            d = json.loads(r.read())
+        self.assertEqual(d["anuncios"]["posts"], 1)
+        marcados = [x for x in d["detenciones"] if x["anuncio"]]
+        self.assertEqual((len(marcados), marcados[0]["medio"]), (1, "video"))
+
+    def test_migra_base_vieja(self):
+        import sqlite3
+        ruta = Path(self.tmp.name) / "vieja.db"
+        con = sqlite3.connect(ruta)
+        con.executescript(euriloco.ESQUEMA.replace(",\n    anuncio       INTEGER NOT NULL DEFAULT 0,\n    medio         TEXT", ""))
+        con.execute("INSERT INTO eventos (id, red, inicio_ms, fin_ms, permanencia_ms, recibido_ms) VALUES ('v', 'x', 1, 2, 1, 3)")
+        con.commit(); con.close()
+        m = euriloco.Memoria(ruta)
+        fila = m.consulta("SELECT id, anuncio, medio FROM eventos")[0]
+        self.assertEqual(fila, {"id": "v", "anuncio": 0, "medio": None})
+
     def test_texto_largo_se_recorta(self):
         e = self.evento(1, 1000)
         e["texto"] = "a" * 5000

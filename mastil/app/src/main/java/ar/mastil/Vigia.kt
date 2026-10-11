@@ -173,6 +173,8 @@ class Vigia : AccessibilityService() {
             .put("cuenta", post.cuenta ?: JSONObject.NULL)
             .put("texto", post.texto)
             .put("tiene_imagen", post.tieneImagen)
+            .put("anuncio", post.anuncio)
+            .put("medio", post.medio ?: JSONObject.NULL)
             .put("clave", post.clave)
         try {
             Registro.agregar(this, evento)

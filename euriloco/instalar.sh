@@ -17,7 +17,9 @@ echo "3/4 Registrando el servicio..."
 mkdir -p "$HOME/.config/systemd/user"
 cp "$ORIGEN/euriloco.service" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
-systemctl --user enable --now euriloco.service
+systemctl --user enable euriloco.service
+# restart: si ya estaba corriendo una versión anterior, la reemplaza (los datos se conservan).
+systemctl --user restart euriloco.service
 # Que siga corriendo aunque nadie haya iniciado sesión:
 sudo loginctl enable-linger "$USER" || true
 

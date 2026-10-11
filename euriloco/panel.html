@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Euríloco · Espejo</title>
+<style>
+  :root {
+    --fondo: #f6f4ef; --tarjeta: #ffffff; --tinta: #1f2328; --suave: #626a73;
+    --linea: #dcd8cf; --acento: #2f6db5; --alerta: #b8860b; --barra-suave: #c9d6e6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #16181b; --tarjeta: #1f2226; --tinta: #e8e6e1; --suave: #9aa1a9;
+      --linea: #33373d; --acento: #6fa3e0; --alerta: #e0b44a; --barra-suave: #34465c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--tinta);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; margin-bottom: 8px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.01em; }
+  .lema { color: var(--suave); margin: 0 0 20px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .nota { color: var(--suave); font-size: 13px; margin: 0 0 12px; }
+  .tarjeta { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 10px;
+             padding: 16px 18px; margin-bottom: 16px; }
+  .grilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .cifra { font-size: 26px; font-weight: 650; }
+  .rotulo { color: var(--suave); font-size: 13px; }
+  .controles { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }
+  select, button { font: inherit; color: var(--tinta); background: var(--tarjeta);
+                   border: 1px solid var(--linea); border-radius: 6px; padding: 4px 10px; }
+  button { cursor: pointer; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { fill: var(--suave); font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--linea); vertical-align: top; }
+  th { color: var(--suave); font-weight: 500; font-size: 13px; }
+  td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .texto { color: var(--tinta); max-width: 520px; overflow-wrap: anywhere; }
+  .vacio { color: var(--suave); font-style: italic; }
+  #qr { max-width: 240px; background: #fff; padding: 8px; border-radius: 8px; }
+  #qr svg { width: 100%; }
+  code { font-size: 12px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Euríloco</h1><span class="rotulo">espejo · etapa 1</span></header>
+  <p class="lema">Lo que tu atención hizo cuando no estabas mirando. Mástil observa; acá lo ves con calma.</p>
+
+  <div class="controles">
+    <label>Período
+      <select id="dias">
+        <option value="7">7 días</option>
+        <option value="30" selected>30 días</option>
+        <option value="90">90 días</option>
+        <option value="365">un año</option>
+      </select>
+    </label>
+    <label>Detención desde
+      <select id="umbral">
+        <option value="2000">2 segundos</option>
+        <option value="3000" selected>3 segundos</option>
+        <option value="5000">5 segundos</option>
+      </select>
+    </label>
+    <button id="emparejar">Emparejar teléfono</button>
+  </div>
+
+  <section class="tarjeta" id="caja-emparejar" hidden>
+    <h2>Emparejar Mástil</h2>
+    <p class="nota">Escaneá este código con la cámara del teléfono y abrilo con Mástil. Solo hace falta una vez.</p>
+    <div id="qr"></div>
+    <p class="nota">Si no aparece el código, copiá este enlace en el teléfono: <code id="enlace"></code></p>
+  </section>
+
+  <section class="tarjeta">
+    <div class="grilla" id="resumen"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Tiempo frente a X, por día</h2>
+    <p class="nota">Minutos de permanencia sobre posts. El tono fuerte marca el tiempo en detenciones largas.</p>
+    <div id="g-dias"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Cuánto te detenés en cada post</h2>
+    <p class="nota">La mayoría pasa de largo. Lo que se queda a la derecha es lo que el algoritmo lee como interés.</p>
+    <div id="g-tramos"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Cuentas donde más se queda tu atención</h2>
+    <div id="g-cuentas"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Últimas detenciones largas</h2>
+    <p class="nota">Material para la próxima sesión consciente: de acá van a salir tus primeras cuerdas.</p>
+    <div id="t-detenciones"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const min = (ms) => ms / 60000;
+const fmtMin = (ms) => { const m = min(ms); return m >= 10 ? Math.round(m) + " min" : m.toFixed(1).replace(".", ",") + " min"; };
+const fmtSeg = (ms) => (ms / 1000).toFixed(1).replace(".", ",") + " s";
+const fmtFecha = (ms) => new Date(ms).toLocaleString("es-AR", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"});
+const vacio = (txt) => `<p class="vacio">${txt}</p>`;
+
+function barrasVerticales(filas, ancho = 900, alto = 220) {
+  if (!filas.length) return vacio("Todavía no hay datos. Usá X un rato con Mástil activo y sincronizá.");
+  const izq = 40, abajo = 28, arriba = 10;
+  const maximo = Math.max(...filas.map(f => f.total)) || 1;
+  const paso = (ancho - izq - 10) / filas.length;
+  const bw = Math.max(2, Math.min(28, paso * 0.7));
+  const y = (v) => arriba + (alto - abajo - arriba) * (1 - v / maximo);
+  let s = `<svg viewBox="0 0 ${ancho} ${alto}" role="img" aria-label="Tiempo por día">`;
+  for (let i = 0; i <= 3; i++) {
+    const v = maximo * i / 3, yy = y(v);
+    s += `<line x1="${izq}" x2="${ancho}" y1="${yy}" y2="${yy}" stroke="var(--linea)"/>`;
+    s += `<text x="${izq - 6}" y="${yy + 4}" text-anchor="end">${Math.round(min(v))}</text>`;
+  }
+  const cada = Math.ceil(filas.length / 10);
+  filas.forEach((f, i) => {
+    const x = izq + i * paso + (paso - bw) / 2;
+    s += `<rect x="${x}" y="${y(f.total)}" width="${bw}" height="${y(0) - y(f.total)}" rx="3" fill="var(--barra-suave)"><title>${esc(f.dia)}: ${fmtMin(f.total)}</title></rect>`;
+    s += `<rect x="${x}" y="${y(f.fuerte)}" width="${bw}" height="${y(0) - y(f.fuerte)}" rx="3" fill="var(--acento)"><title>detenciones largas: ${fmtMin(f.fuerte)}</title></rect>`;
+    if (i % cada === 0) s += `<text x="${x + bw / 2}" y="${alto - 8}" text-anchor="middle">${esc(f.dia.slice(8, 10) + "/" + f.dia.slice(5, 7))}</text>`;
+  });
+  return s + "</svg>";
+}
+
+function barrasHorizontales(filas, etiqueta, valor, texto, color = "var(--acento)") {
+  if (!filas.length) return vacio("Sin datos todavía.");
+  const ancho = 900, fila = 26, izq = 180, der = 150;
+  const alto = filas.length * fila + 8;
+  const maximo = Math.max(...filas.map(valor)) || 1;
+  let s = `<svg viewBox="0 0 ${ancho} ${alto}" role="img">`;
+  filas.forEach((f, i) => {
+    const yy = 4 + i * fila, w = (ancho - izq - der) * valor(f) / maximo;
+    s += `<text x="${izq - 8}" y="${yy + 16}" text-anchor="end" style="fill:var(--tinta);font-size:13px">${esc(etiqueta(f))}</text>`;
+    s += `<rect x="${izq}" y="${yy + 4}" width="${Math.max(1, w)}" height="${fila - 10}" rx="3" fill="${color}"/>`;
+    s += `<text x="${izq + w + 6}" y="${yy + 16}">${esc(texto(f))}</text>`;
+  });
+  return s + "</svg>";
+}
+
+const TRAMOS = ["menos de 1 s", "1 a 2 s", "2 a 3 s", "3 a 5 s", "5 a 10 s", "más de 10 s"];
+
+async function cargar() {
+  const dias = $("dias").value, umbral = $("umbral").value;
+  const r = await fetch(`/panel/datos?dias=${dias}&umbral=${umbral}`);
+  const d = await r.json();
+
+  const total = d.por_dia.reduce((a, f) => a + f.total_ms, 0);
+  const posts = d.por_dia.reduce((a, f) => a + f.posts, 0);
+  const det = d.por_dia.reduce((a, f) => a + f.detenciones, 0);
+  const sincro = d.ultima_sincro ? fmtFecha(d.ultima_sincro.momento_ms) : "nunca";
+  $("resumen").innerHTML = [
+    [fmtMin(total), "frente a posts"], [posts.toLocaleString("es-AR"), "posts vistos"],
+    [det.toLocaleString("es-AR"), `detenciones de ${umbral / 1000} s o más`],
+    [posts ? Math.round(100 * det / posts) + " %" : "—", "de los posts te detuvieron"],
+    [sincro, "última sincronización"],
+  ].map(([c, r]) => `<div><div class="cifra">${esc(c)}</div><div class="rotulo">${esc(r)}</div></div>`).join("");
+
+  // Tiempo por día: total y, superpuesto, el tiempo en detenciones largas.
+  $("g-dias").innerHTML = barrasVerticales(d.por_dia.map(f => ({
+    dia: f.dia, total: f.total_ms, fuerte: f.detenciones_ms,
+  })));
+
+  const porTramo = TRAMOS.map((t, i) => ({ t, n: (d.tramos.find(x => x.tramo === i) || {}).posts || 0 }));
+  $("g-tramos").innerHTML = posts ? barrasHorizontales(porTramo, f => f.t, f => f.n,
+    f => f.n.toLocaleString("es-AR") + " posts") : vacio("Sin datos todavía.");
+
+  $("g-cuentas").innerHTML = barrasHorizontales(d.cuentas, f => f.cuenta, f => f.total_ms,
+    f => `${fmtMin(f.total_ms)} · ${f.posts} posts`);
+
+  $("t-detenciones").innerHTML = d.detenciones.length ? `<table><thead><tr><th>Cuándo</th><th>Tiempo</th><th>Cuenta</th><th>Qué decía</th></tr></thead><tbody>` +
+    d.detenciones.map(e => `<tr><td class="num">${fmtFecha(e.inicio_ms)}</td><td class="num">${fmtSeg(e.permanencia_ms)}</td>` +
+      `<td>${esc(e.cuenta || "—")}</td><td class="texto">${esc((e.texto || "").slice(0, 220))}${e.tiene_imagen ? " <span class='rotulo'>[imagen]</span>" : ""}</td></tr>`).join("") +
+    "</tbody></table>" : vacio("Ninguna detención larga en el período.");
+}
+
+$("dias").addEventListener("change", cargar);
+$("umbral").addEventListener("change", cargar);
+$("emparejar").addEventListener("click", async () => {
+  const caja = $("caja-emparejar");
+  caja.hidden = !caja.hidden;
+  if (caja.hidden) return;
+  const d = await (await fetch("/panel/emparejar")).json();
+  $("qr").innerHTML = d.qr_svg || vacio("Falta el paquete qrcode: usá el enlace de abajo.");
+  $("enlace").textContent = d.enlace;
+});
+cargar();
+setInterval(cargar, 60000);
+</script>
+</body>
+</html>

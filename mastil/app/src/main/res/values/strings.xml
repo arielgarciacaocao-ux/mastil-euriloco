@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mástil</string>
+    <string name="descripcion_accesibilidad">Mástil lee la pantalla de X (y de ninguna otra app) para medir cuánto tiempo te detenés en cada post. Esos registros quedan en tu teléfono y viajan solo a tu Euríloco, en tu propia computadora. En esta etapa Mástil observa: no toca la pantalla, no da likes ni sigue cuentas.</string>
+</resources>

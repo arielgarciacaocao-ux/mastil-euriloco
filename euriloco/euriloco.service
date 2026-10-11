@@ -1,0 +1,12 @@
+[Unit]
+Description=Euríloco, la memoria de Mástil
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.local/lib/euriloco/euriloco.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

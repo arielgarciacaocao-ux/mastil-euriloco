@@ -18,6 +18,10 @@ data class Post(
     val pestana: String? = null,
     /** Dónde está el post en la pantalla, para la miniatura. */
     val marco: Rect? = null,
+    val gustado: Boolean = false,
+    val reposteado: Boolean = false,
+    val guardado: Boolean = false,
+    val descartado: Boolean = false,
 )
 
 /**
@@ -40,9 +44,15 @@ object AdaptadorX {
     var diagnostico: String = ""
         private set
 
+    /** Todos los posts visibles en la última lectura: sirven para ver cambios de estado en cualquiera. */
+    @Volatile
+    var visibles: List<Post> = emptyList()
+        private set
+
     fun postEnfocado(raiz: AccessibilityNodeInfo): Post? {
         val lista = buscarLista(raiz)
         if (lista == null) {
+            visibles = emptyList()
             diagnostico = "X está abierto, pero no encuentro ninguna lista desplazable en pantalla."
             return null
         }
@@ -50,19 +60,29 @@ object AdaptadorX {
         lista.getBoundsInScreen(marco)
         val medio = marco.centerY()
         val clase = lista.className?.toString()?.substringAfterLast('.').orEmpty()
+        val pestana = pestanaActual(raiz)
+        val leidos = mutableListOf<Post>()
+        var enfocado: Post? = null
+        var filaCentral = false
         for (i in 0 until lista.childCount) {
             val fila = lista.getChild(i) ?: continue
             val r = Rect()
             fila.getBoundsInScreen(r)
+            if (r.bottom < marco.top || r.top > marco.bottom) continue
+            val post = armarPost(fila, r)?.copy(pestana = pestana)
+            if (post != null) leidos.add(post)
             if (medio >= r.top && medio <= r.bottom) {
-                val post = armarPost(fila, r)?.copy(pestana = pestanaActual(raiz))
-                diagnostico = if (post != null) "Leyendo bien (lista $clase, ${lista.childCount} filas)."
-                else "Encuentro el feed ($clase), pero la fila del centro no tiene texto legible."
-                return post
+                filaCentral = true
+                enfocado = post
             }
         }
-        diagnostico = "Encuentro el feed ($clase, ${lista.childCount} filas), pero ninguna cruza el centro de la pantalla."
-        return null
+        visibles = leidos
+        diagnostico = when {
+            enfocado != null -> "Leyendo bien (lista $clase, ${lista.childCount} filas)."
+            filaCentral -> "Encuentro el feed ($clase), pero la fila del centro no tiene texto legible."
+            else -> "Encuentro el feed ($clase, ${lista.childCount} filas), pero ninguna cruza el centro de la pantalla."
+        }
+        return enfocado
     }
 
     /** El post que contiene un punto de la pantalla: el que recibió un toque. */
@@ -145,11 +165,17 @@ object AdaptadorX {
             for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
         }
         val limpio = Limpieza.limpiar(textos, MAX_TEXTO)
+        if (limpio.descartado) {
+            // La fila es el aviso de «No me interesa»: se devuelve marcada para que el vigía lo note.
+            return Post(clave = "descartado", cuenta = null, texto = "", tieneImagen = false,
+                marco = Rect(marco), descartado = true)
+        }
         if (limpio.texto.length < 8) return null
         return Post(clave = huella(limpio.firma), cuenta = limpio.cuenta, texto = limpio.texto,
             tieneImagen = imagen || limpio.medio != null, anuncio = limpio.anuncio, medio = limpio.medio,
             vistas = limpio.vistas, verificada = limpio.verificada, traducido = limpio.traducido,
-            marco = Rect(marco))
+            marco = Rect(marco), gustado = limpio.gustado, reposteado = limpio.reposteado,
+            guardado = limpio.guardado)
     }
 
     private val PESTANAS = mapOf("para ti" to "para ti", "for you" to "para ti",
@@ -161,7 +187,7 @@ object AdaptadorX {
      * En qué pestaña del inicio está el feed: «Para ti» (lo elige el algoritmo) o «Siguiendo»
      * (cuentas que seguís). Se recalcula como mucho cada 2 segundos.
      */
-    private fun pestanaActual(raiz: AccessibilityNodeInfo): String? {
+    fun pestanaActual(raiz: AccessibilityNodeInfo): String? {
         val ahora = System.currentTimeMillis()
         if (ahora - pestanaMomento < 2000) return pestanaCache
         pestanaMomento = ahora

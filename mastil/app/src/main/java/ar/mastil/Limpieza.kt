@@ -16,7 +16,18 @@ object Limpieza {
         val vistas: Long?,        // el contador más alto de la fila: casi siempre, las vistas
         val verificada: Boolean,  // cuenta con tilde
         val traducido: Boolean,   // X tradujo el post de otro idioma
+        // Estado de tus botones en este post: X los marca cambiando el nombre del botón
+        // («Me gusta» pasa a «Deshacer Me gusta»). Comparar el antes y el después revela la acción.
+        val gustado: Boolean = false,
+        val reposteado: Boolean = false,
+        val guardado: Boolean = false,
+        /** La fila es el aviso que deja X después de «No me interesa» (el post desapareció). */
+        val descartado: Boolean = false,
     )
+
+    /** Frases del aviso que reemplaza un post marcado con «No me interesa». */
+    private val DESCARTE = listOf("verás menos", "veras menos", "mejorar tu cronología", "mejorar tu timeline",
+        "no te interesa este post", "see fewer", "improve your timeline", "this post is hidden", "post oculto")
 
     private val HANDLE = Regex("@[A-Za-z0-9_]{1,15}")
 
@@ -44,12 +55,25 @@ object Limpieza {
         var verificada = false
         var traducido = false
         var vistas: Long? = null
+        var gustado = false
+        var reposteado = false
+        var guardado = false
+        var descartado = false
         val utiles = mutableListOf<String>()
         for (crudo in textos) {
-            val t = crudo.trim()
+            // X antepone «· » a la hora («· 1h»): se quita para reconocerla.
+            val t = crudo.trim().trimStart('·', ' ').trim()
             val clave = t.lowercase()
             val numero = NUMERO.matchEntire(t)
             when {
+                clave.startsWith("deshacer") || clave.startsWith("undo") -> {
+                    if ("me gusta" in clave || "like" in clave) gustado = true
+                    if ("repost" in clave || "retweet" in clave) reposteado = true
+                }
+                clave == "liked" || clave == "unlike" -> gustado = true
+                (clave.contains("guardad") && clave != "guardar elemento") || clave == "remove bookmark" ||
+                    clave == "bookmarked" -> guardado = true
+                DESCARTE.any { it in clave } -> descartado = true
                 clave in ANUNCIO -> anuncio = true
                 clave in VERIFICADA -> verificada = true
                 clave in MEDIOS -> if (medio == null) medio = MEDIOS[clave]
@@ -67,7 +91,8 @@ object Limpieza {
         // se le suma la cuenta para no confundir posts distintos.
         val cuerpo = utiles.filter { it != cuenta }.maxByOrNull { it.length }.orEmpty().take(100)
         val firma = if (cuerpo.length >= 25) cuerpo else (cuenta ?: "") + "|" + cuerpo
-        return Resultado(texto, cuenta, anuncio, medio, firma, vistas, verificada, traducido)
+        return Resultado(texto, cuenta, anuncio, medio, firma, vistas, verificada, traducido,
+            gustado, reposteado, guardado, descartado)
     }
 
     /** "4.4K" → 4400, "3,5 M" → 3500000, "1.234" → 1234, "28 mil" → 28000. */

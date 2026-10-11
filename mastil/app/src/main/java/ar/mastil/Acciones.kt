@@ -10,9 +10,9 @@ package ar.mastil
  */
 object Acciones {
     private val REGLAS: List<Pair<String, List<String>>> = listOf(
-        "quitar me gusta" to listOf("ya no me gusta", "unlike", "liked"),
+        "quitar me gusta" to listOf("deshacer me gusta", "ya no me gusta", "unlike", "liked"),
         "me gusta" to listOf("me gusta", "like"),
-        "deshacer repost" to listOf("deshacer repost", "undo repost"),
+        "deshacer repost" to listOf("deshacer repost", "deshacer repostear", "undo repost"),
         "repostear" to listOf("repostear", "repost"),
         "quitar guardado" to listOf("quitar de guardados", "eliminar de elementos guardados", "remove bookmark"),
         "guardar" to listOf("guardar elemento", "elementos guardados", "bookmark"),
@@ -32,6 +32,7 @@ object Acciones {
     /** Acciones que no son botones sino cambios de pantalla, detectados aparte. */
     const val ENTRAR = "entrar al post"
     const val PERFIL = "abrir perfil"
+    const val RESPONDER = "responder"
 
     private val SIN_ACCION = listOf("explicar este post con grok", "opciones del post", "more", "más opciones")
 
@@ -64,11 +65,13 @@ object Acciones {
     }
 
     /**
-     * Qué pantalla abrió un toque que no era un botón: el perfil de una cuenta o el detalle
-     * de un post. Se reconoce por textos que solo aparecen ahí.
+     * En qué pantalla de X estás, fuera del inicio: el perfil de una cuenta, el detalle de un
+     * post o el editor de una respuesta. Se reconoce por textos que solo aparecen ahí.
      */
     fun clasificarPantalla(textos: List<String>): String? {
         val t = textos.map { it.lowercase().trim() }
+        val respondiendo = t.any { it.startsWith("respondiendo a") || it.startsWith("replying to") }
+        if (respondiendo) return RESPONDER
         val esPerfil = t.any { it == "seguidores" || it == "followers" || it.endsWith(" seguidores") || it.endsWith(" followers") }
         if (esPerfil) return PERFIL
         val esPost = t.any {
@@ -76,5 +79,20 @@ object Acciones {
                 it.startsWith("post your reply") || it == "post" || it.startsWith("respuestas más relevantes")
         }
         return if (esPost) ENTRAR else null
+    }
+}
+
+/** Avisos de X después de silenciar o bloquear: «Silenciaste a @cuenta». */
+object AvisosDeX {
+    private val SILENCIO = Regex("""(silenciaste a|muted)\s+(@[A-Za-z0-9_]{1,15})""", RegexOption.IGNORE_CASE)
+    private val BLOQUEO = Regex("""(bloqueaste a|blocked)\s+(@[A-Za-z0-9_]{1,15})""", RegexOption.IGNORE_CASE)
+
+    /** Devuelve (acción, cuenta) si alguno de los textos es un aviso de silencio o bloqueo. */
+    fun buscar(textos: List<String>): Pair<String, String>? {
+        for (t in textos) {
+            SILENCIO.find(t)?.let { return "silenciar" to it.groupValues[2] }
+            BLOQUEO.find(t)?.let { return "bloquear" to it.groupValues[2] }
+        }
+        return null
     }
 }

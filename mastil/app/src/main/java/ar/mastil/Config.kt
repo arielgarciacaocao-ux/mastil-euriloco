@@ -73,6 +73,14 @@ object Config {
         get() = prefs(this).getString("ultimo_diagnostico", "") ?: ""
         set(v) = prefs(this).edit().putString("ultimo_diagnostico", v).apply()
 
+    var Context.ultimaAccion: String
+        get() = prefs(this).getString("ultima_accion", "") ?: ""
+        set(v) = prefs(this).edit().putString("ultima_accion", v).apply()
+
+    var Context.ultimaAccionMomento: Long
+        get() = prefs(this).getLong("ultima_accion_momento", 0L)
+        set(v) = prefs(this).edit().putLong("ultima_accion_momento", v).apply()
+
     var Context.eventosAnotados: Long
         get() = prefs(this).getLong("eventos_anotados", 0L)
         set(v) = prefs(this).edit().putLong("eventos_anotados", v).apply()

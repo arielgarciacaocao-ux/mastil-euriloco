@@ -7,12 +7,12 @@
 <style>
   :root {
     --fondo: #f6f4ef; --tarjeta: #ffffff; --tinta: #1f2328; --suave: #626a73;
-    --linea: #dcd8cf; --acento: #2f6db5; --alerta: #b8860b; --barra-suave: #c9d6e6;
+    --linea: #dcd8cf; --acento: #2f6db5; --alerta: #b8860b; --barra-suave: #c9d6e6; --negativo: #b23b3b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --fondo: #16181b; --tarjeta: #1f2226; --tinta: #e8e6e1; --suave: #9aa1a9;
-      --linea: #33373d; --acento: #6fa3e0; --alerta: #e0b44a; --barra-suave: #34465c;
+      --linea: #33373d; --acento: #6fa3e0; --alerta: #e0b44a; --barra-suave: #34465c; --negativo: #d76a6a;
     }
   }
   * { box-sizing: border-box; }
@@ -59,6 +59,11 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chip { font-size: 12px; color: var(--suave); border: 1px solid var(--linea); border-radius: 999px; padding: 1px 8px; }
   .chip.fuerte { color: var(--tinta); border-color: var(--acento); }
+  .chip.accion { color: #fff; background: var(--acento); border-color: var(--acento); }
+  .chip.negativa { color: #fff; background: var(--negativo); border-color: var(--negativo); }
+  .dos { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 760px) { .dos { grid-template-columns: 1fr; } }
+  h3 { font-size: 14px; margin: 4px 0 6px; }
   select.etiqueta { font-size: 13px; padding: 2px 6px; }
   select.etiqueta.puesta { border-color: var(--acento); color: var(--acento); font-weight: 600; }
   @media (max-width: 560px) { .post { grid-template-columns: 80px 1fr; } .mini { width: 80px; height: 80px; } }
@@ -68,7 +73,7 @@
 </head>
 <body>
 <main>
-  <header><h1>Euríloco</h1><span class="rotulo">espejo · etapa 1 · v0.2</span></header>
+  <header><h1>Euríloco</h1><span class="rotulo">espejo · etapa 1 · v0.3</span></header>
   <p class="lema">Lo que tu atención hizo cuando no estabas mirando. Mástil observa; acá lo ves con calma.</p>
 
   <div class="controles">
@@ -105,6 +110,18 @@
     <h2>A dónde se va tu atención, por etiqueta</h2>
     <p class="nota">Tiempo de permanencia según la etiqueta de cada cuenta. Lo que queda «sin etiqueta» es lo que falta clasificar.</p>
     <div id="g-etiquetas"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2>Señales que le diste a X</h2>
+    <p class="nota">Tus acciones, no solo tu permanencia. Los pesos son aproximados, del código que X publicó en 2023:
+      responder o entrar a un post pesa unas 20 veces más que un me gusta, y «No me interesa» resta mucho.</p>
+    <div class="dos">
+      <div><h3>Qué hiciste</h3><div id="g-acciones"></div></div>
+      <div><h3>Señal estimada por etiqueta</h3><div id="g-senal"></div></div>
+    </div>
+    <h3 style="margin-top:16px">Tus últimas acciones</h3>
+    <div id="t-acciones"></div>
   </section>
 
   <section class="tarjeta">
@@ -160,6 +177,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":
 const min = (ms) => ms / 60000;
 const fmtMin = (ms) => { const m = min(ms); return m >= 10 ? Math.round(m) + " min" : m.toFixed(1).replace(".", ",") + " min"; };
 const fmtSeg = (ms) => (ms / 1000).toFixed(1).replace(".", ",") + " s";
+const fmtDur = (ms) => ms < 60000 ? Math.round(ms / 1000) + " s" : Math.floor(ms / 60000) + " min " + Math.round((ms % 60000) / 1000) + " s";
 const fmtFecha = (ms) => new Date(ms).toLocaleString("es-AR", {day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit"});
 const vacio = (txt) => `<p class="vacio">${txt}</p>`;
 
@@ -234,6 +252,7 @@ async function cargar() {
 
   ultimo = d;
   pintarPosts();
+  pintarAcciones(d);
 
   $("g-etiquetas").innerHTML = d.por_etiqueta.length ? barrasHorizontales(d.por_etiqueta, f => f.etiqueta, f => f.total_ms,
     f => `${fmtMin(f.total_ms)} · ${f.posts} posts`) : vacio("Sin datos todavía.");
@@ -244,6 +263,56 @@ async function cargar() {
 }
 
 let ultimo = null;
+
+const NEGATIVAS = new Set(["no me interesa", "silenciar", "bloquear", "denunciar", "quitar me gusta",
+  "deshacer repost", "quitar guardado", "dejar de seguir"]);
+
+function chipAccion(a) {
+  return `<span class="chip ${NEGATIVAS.has(a) ? "negativa" : "accion"}">${esc(a)}</span>`;
+}
+
+function barrasConSigno(filas, etiqueta, valor, texto) {
+  if (!filas.length) return vacio("Todavía no hay acciones registradas.");
+  const ancho = 460, fila = 28, izq = 130, der = 70, medio = izq + (ancho - izq - der) / 2;
+  const maximo = Math.max(...filas.map(f => Math.abs(valor(f)))) || 1;
+  const mitad = (ancho - izq - der) / 2;
+  const hayNeg = filas.some(f => valor(f) < 0);
+  const cero = hayNeg ? medio : izq;
+  const escala = hayNeg ? mitad : (ancho - izq - der);
+  let s = `<svg viewBox="0 0 ${ancho} ${filas.length * fila + 8}" role="img">`;
+  s += `<line x1="${cero}" x2="${cero}" y1="0" y2="${filas.length * fila + 8}" stroke="var(--linea)"/>`;
+  filas.forEach((f, i) => {
+    const v = valor(f), w = Math.max(1, escala * Math.abs(v) / maximo), y = 4 + i * fila;
+    const x = v < 0 ? cero - w : cero;
+    s += `<text x="${izq - 8}" y="${y + 17}" text-anchor="end" style="fill:var(--tinta);font-size:13px">${esc(etiqueta(f))}</text>`;
+    s += `<rect x="${x}" y="${y + 5}" width="${w}" height="${fila - 12}" rx="3" fill="${v < 0 ? "var(--negativo)" : "var(--acento)"}"/>`;
+    s += `<text x="${v < 0 ? cero + 6 : cero + w + 6}" y="${y + 17}" style="font-size:12px">${esc(texto(f))}</text>`;
+  });
+  return s + "</svg>";
+}
+
+function pintarAcciones(d) {
+  const porAccion = {};
+  const porEtiqueta = {};
+  d.acciones_periodo.forEach(f => {
+    porAccion[f.accion] = (porAccion[f.accion] || 0) + f.veces;
+    porEtiqueta[f.etiqueta] = (porEtiqueta[f.etiqueta] || 0) + f.veces * (d.pesos[f.accion] || 0);
+  });
+  const filasAccion = Object.entries(porAccion).map(([accion, veces]) => ({accion, veces}))
+    .sort((a, b) => b.veces - a.veces);
+  $("g-acciones").innerHTML = filasAccion.length
+    ? barrasConSigno(filasAccion, f => f.accion, f => NEGATIVAS.has(f.accion) ? -f.veces : f.veces, f => f.veces + (f.veces === 1 ? " vez" : " veces"))
+    : vacio("Todavía no hay acciones registradas.");
+  const filasSenal = Object.entries(porEtiqueta).map(([etiqueta, puntos]) => ({etiqueta, puntos}))
+    .sort((a, b) => b.puntos - a.puntos);
+  $("g-senal").innerHTML = filasSenal.length
+    ? barrasConSigno(filasSenal, f => f.etiqueta, f => f.puntos, f => (f.puntos > 0 ? "+" : "") + Math.round(f.puntos))
+    : vacio("Todavía no hay acciones registradas.");
+  $("t-acciones").innerHTML = d.ultimas_acciones.length ? `<table><thead><tr><th>Cuándo</th><th>Acción</th><th>Cuenta</th><th>Post</th></tr></thead><tbody>` +
+    d.ultimas_acciones.map(a => `<tr><td class="num">${fmtFecha(a.momento_ms)}</td><td>${chipAccion(a.accion)}${a.duracion_ms ? ` <span class="rotulo" style="white-space:nowrap">${fmtDur(a.duracion_ms)}</span>` : ""}</td>` +
+      `<td>${esc(a.cuenta || "—")}${a.etiqueta ? ` <span class="rotulo">${esc(a.etiqueta)}</span>` : ""}</td><td class="texto">${esc((a.texto || "").slice(0, 140))}</td></tr>`).join("") +
+    "</tbody></table>" : vacio("Cuando des me gusta, entres a un post o marques «No me interesa», aparece acá.");
+}
 
 function alcance(n) {
   if (n == null) return null;
@@ -276,6 +345,7 @@ function pintarPosts() {
       e.traducido ? `<span class="chip">traducido</span>` : "",
       e.medio ? `<span class="chip">${esc(e.medio)}</span>` : "",
       e.anuncio ? `<span class="marca">anuncio</span>` : "",
+      ...(e.acciones || []).map(chipAccion),
     ].join("");
     return `<div class="post">${mini}<div>
       <div class="cabeza"><span class="cuenta">${esc(e.cuenta || "cuenta desconocida")}</span>

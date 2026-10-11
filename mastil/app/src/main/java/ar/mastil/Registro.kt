@@ -26,7 +26,7 @@ object Registro {
         val limite = System.currentTimeMillis() - RETENCION_MS
         return f.readLines().mapNotNull { linea ->
             try {
-                JSONObject(linea).takeIf { it.optLong("fin") >= limite }
+                JSONObject(linea).takeIf { momento(it) >= limite }
             } catch (e: Exception) {
                 null
             }
@@ -48,5 +48,8 @@ object Registro {
     fun cantidad(c: Context): Int = pendientes(c).size
 
     /** Momento del evento pendiente más viejo, o 0 si no hay. */
-    fun masViejo(c: Context): Long = pendientes(c).minOfOrNull { it.optLong("fin") } ?: 0L
+    fun masViejo(c: Context): Long = pendientes(c).minOfOrNull { momento(it) } ?: 0L
+
+    /** Cuándo ocurrió: los eventos de permanencia tienen «fin»; las acciones, «momento». */
+    private fun momento(j: JSONObject): Long = if (j.has("fin")) j.optLong("fin") else j.optLong("momento")
 }

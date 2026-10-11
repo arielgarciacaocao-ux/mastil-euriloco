@@ -18,6 +18,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import ar.mastil.Config.eventosAnotados
+import ar.mastil.Config.ultimaAccion
+import ar.mastil.Config.ultimaAccionMomento
 import ar.mastil.Config.ultimaSincro
 import ar.mastil.Config.ultimoContactoX
 import ar.mastil.Config.ultimoDiagnostico
@@ -97,7 +99,8 @@ class PrincipalActivity : Activity() {
                 append("Último contacto con X: ${hace(ultimoContactoX)}\n")
                 append("Último post leído: ${if (ultimoPostLeido == 0L) "ninguno todavía" else hace(ultimoPostLeido)}\n")
                 if (ultimoPostTexto.isNotEmpty()) append("«$ultimoPostTexto»\n")
-                append("Lector: $ultimoDiagnostico")
+                append("Lector: $ultimoDiagnostico\n")
+                append("Última acción tuya: ${if (ultimaAccionMomento == 0L) "ninguna registrada todavía" else "$ultimaAccion (${hace(ultimaAccionMomento)})"}")
             }
         }
     }

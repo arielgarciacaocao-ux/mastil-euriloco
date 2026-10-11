@@ -258,6 +258,32 @@ class PruebaEuriloco(unittest.TestCase):
         self.assertFalse(archivo.exists())
         self.assertEqual(h.memoria.consulta("SELECT captura FROM eventos")[0]["captura"], 0)
 
+    # ---- 0.3: acciones
+
+    def accion(self, i, accion, cuenta="@alguien", clave="k1", duracion=None):
+        return {"tipo": "accion", "id": f"a{i}", "momento": int(time.time() * 1000) - 1000, "accion": accion,
+                "cuenta": cuenta, "clave": clave, "texto": "post", "pestana": "para ti", "duracion_ms": duracion}
+
+    def test_acciones_se_guardan_y_se_ven(self):
+        ev = self.evento(1, 6000, "@cebo")  # clave k1
+        lote = [ev, self.accion(1, "me gusta", "@cebo"), self.accion(2, "entrar al post", "@cebo", duracion=95000),
+                self.accion(3, "no me interesa", "@otra", clave="k9"), self.accion(4, "hackear", "@x"),
+                {"tipo": "accion", "id": "a5"}]
+        cod, r = self.pedir("/api/eventos", {"eventos": lote})
+        self.assertEqual((cod, r["nuevos"]), (200, 4))  # 1 evento + 3 acciones válidas
+        cod, r = self.pedir("/api/eventos", {"eventos": lote})
+        self.assertEqual(r["nuevos"], 0)
+        self.etiquetar("@cebo", "anzuelo")
+        with urllib.request.urlopen(self.base + "/panel/datos?dias=7") as r:
+            d = json.loads(r.read())
+        self.assertEqual(d["eventos_total"], 1)
+        self.assertEqual(d["detenciones"][0]["acciones"], ["entrar al post", "me gusta"])
+        periodo = {(f["accion"], f["etiqueta"]): f["veces"] for f in d["acciones_periodo"]}
+        self.assertEqual(periodo, {("me gusta", "anzuelo"): 1, ("entrar al post", "anzuelo"): 1,
+                                   ("no me interesa", "sin etiqueta"): 1})
+        self.assertEqual(len(d["ultimas_acciones"]), 3)
+        self.assertEqual(d["pesos"]["no me interesa"], -74.0)
+
     def test_texto_largo_se_recorta(self):
         e = self.evento(1, 1000)
         e["texto"] = "a" * 5000

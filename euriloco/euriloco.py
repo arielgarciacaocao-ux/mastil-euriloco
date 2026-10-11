@@ -36,7 +36,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 PUERTO_POR_DEFECTO = 8737
 MAX_CUERPO = 5 * 1024 * 1024  # 5 MB por lote de eventos
 MAX_TEXTO = 1000              # caracteres guardados por post
@@ -46,6 +46,16 @@ ID_VALIDO = re.compile(r"^[0-9a-fA-F-]{8,64}$")
 # Etiquetas que ofrece el panel para clasificar cuentas; se pueden agregar otras.
 ETIQUETAS_BASE = ["anzuelo", "morbo", "violencia", "indignación", "humor", "política",
                   "noticias", "ciencia", "arte", "cultura", "deporte", "publicidad", "valioso"]
+
+# Acciones que Mástil reconoce y su peso aproximado en el algoritmo de X, según el código
+# que X publicó en 2023 (pueden haber cambiado). Lo negativo resta: es la señal que más corrige.
+PESOS_ACCIONES = {
+    "me gusta": 0.5, "quitar me gusta": -0.5, "repostear": 1.0, "deshacer repost": -1.0,
+    "responder": 13.5, "entrar al post": 11.0, "abrir perfil": 12.0, "guardar": 1.0,
+    "quitar guardado": -1.0, "compartir": 1.0, "activar sonido": 0.3, "ver traducción": 0.3,
+    "seguir": 4.0, "dejar de seguir": -4.0, "no me interesa": -74.0, "silenciar": -74.0,
+    "dejar de silenciar cuenta": 0.0, "bloquear": -74.0, "denunciar": -369.0,
+}
 
 VISION_POR_DEFECTO = {
     "activa": True,
@@ -139,6 +149,20 @@ CREATE TABLE IF NOT EXISTS eventos (
 );
 CREATE INDEX IF NOT EXISTS eventos_inicio ON eventos(inicio_ms);
 CREATE INDEX IF NOT EXISTS eventos_cuenta ON eventos(cuenta);
+CREATE TABLE IF NOT EXISTS acciones (
+    id          TEXT PRIMARY KEY,
+    dispositivo TEXT,
+    momento_ms  INTEGER NOT NULL,
+    accion      TEXT NOT NULL,
+    cuenta      TEXT,
+    clave       TEXT,
+    texto       TEXT,
+    pestana     TEXT,
+    duracion_ms INTEGER,
+    recibido_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS acciones_momento ON acciones(momento_ms);
+CREATE INDEX IF NOT EXISTS acciones_clave ON acciones(clave);
 CREATE TABLE IF NOT EXISTS etiquetas (
     cuenta      TEXT PRIMARY KEY,
     etiqueta    TEXT NOT NULL,
@@ -179,7 +203,14 @@ class Memoria:
     def guardar_lote(self, dispositivo: str, eventos: list) -> tuple[int, int]:
         ahora = int(time.time() * 1000)
         filas = []
+        acciones = []
         for e in eventos:
+            if isinstance(e, dict) and e.get("tipo") == "accion":
+                a = validar_accion(e)
+                if a:
+                    acciones.append((a["id"], dispositivo, a["momento"], a["accion"], a["cuenta"], a["clave"],
+                                     a["texto"], a["pestana"], a["duracion_ms"], ahora))
+                continue
             fila = validar_evento(e)
             if fila:
                 filas.append((fila["id"], dispositivo, fila["red"], fila["inicio"], fila["fin"],
@@ -193,6 +224,7 @@ class Memoria:
                 "INSERT OR IGNORE INTO eventos (id, dispositivo, red, inicio_ms, fin_ms, permanencia_ms,"
                 " cuenta, texto, tiene_imagen, clave, recibido_ms, anuncio, medio, vistas, verificada,"
                 " traducido, pestana) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", filas)
+            self.con.executemany("INSERT OR IGNORE INTO acciones VALUES (?,?,?,?,?,?,?,?,?,?)", acciones)
             nuevos = self.con.total_changes - antes
             self.con.execute("INSERT INTO sincros VALUES (?,?,?,?)", (ahora, dispositivo, len(eventos), nuevos))
             self.con.commit()
@@ -207,6 +239,28 @@ class Memoria:
     def consulta(self, sql: str, params=()) -> list[dict]:
         with self.candado:
             return [dict(f) for f in self.con.execute(sql, params).fetchall()]
+
+
+def validar_accion(e: dict) -> dict | None:
+    """Una acción tuya en X (me gusta, entrar al post…). Solo se aceptan las que Mástil conoce."""
+    try:
+        id_ = str(e["id"])[:64]
+        momento = int(e["momento"])
+        accion = str(e["accion"])[:40]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not id_ or accion not in PESOS_ACCIONES:
+        return None
+    def corto(campo, largo):
+        v = e.get(campo)
+        return str(v)[:largo] if v else None
+    try:
+        duracion = int(e["duracion_ms"]) if e.get("duracion_ms") is not None else None
+    except (TypeError, ValueError):
+        duracion = None
+    return {"id": id_, "momento": momento, "accion": accion, "cuenta": corto("cuenta", 64),
+            "clave": corto("clave", 64), "texto": corto("texto", MAX_TEXTO), "pestana": corto("pestana", 32),
+            "duracion_ms": duracion}
 
 
 def validar_evento(e) -> dict | None:
@@ -264,7 +318,7 @@ def datos_espejo(memoria: Memoria, dias: int = 30, umbral_ms: int = 3000, zona_s
         "WHERE e.inicio_ms >= ? AND e.cuenta IS NOT NULL "
         "GROUP BY e.cuenta ORDER BY total_ms DESC LIMIT 12", (desde,))
     detenciones = memoria.consulta(
-        "SELECT e.id, e.inicio_ms, e.permanencia_ms, e.cuenta, e.texto, e.tiene_imagen, e.anuncio, e.medio,"
+        "SELECT e.id, e.clave, e.inicio_ms, e.permanencia_ms, e.cuenta, e.texto, e.tiene_imagen, e.anuncio, e.medio,"
         " e.vistas, e.verificada, e.traducido, e.pestana, e.captura, e.descripcion, t.etiqueta "
         "FROM eventos e LEFT JOIN etiquetas t ON t.cuenta = e.cuenta "
         "WHERE e.permanencia_ms >= ? AND e.inicio_ms >= ? ORDER BY e.inicio_ms DESC LIMIT ?",
@@ -277,6 +331,23 @@ def datos_espejo(memoria: Memoria, dias: int = 30, umbral_ms: int = 3000, zona_s
     por_pestana = memoria.consulta(
         "SELECT COALESCE(pestana, 'sin dato') AS pestana, SUM(permanencia_ms) AS total_ms, COUNT(*) AS posts "
         "FROM eventos WHERE inicio_ms >= ? GROUP BY 1 ORDER BY total_ms DESC", (desde,))
+    # Acciones: las de cada post de la lista, y los totales del período.
+    claves = sorted({e["clave"] for e in detenciones if e.get("clave")})
+    por_clave: dict[str, list[str]] = {}
+    if claves:
+        marcas = ",".join("?" * len(claves))
+        for f in memoria.consulta(f"SELECT DISTINCT clave, accion FROM acciones WHERE clave IN ({marcas})", claves):
+            por_clave.setdefault(f["clave"], []).append(f["accion"])
+    for e in detenciones:
+        e["acciones"] = sorted(por_clave.get(e.get("clave"), []))
+    acciones_periodo = memoria.consulta(
+        "SELECT a.accion, COUNT(*) AS veces, COALESCE(t.etiqueta, 'sin etiqueta') AS etiqueta "
+        "FROM acciones a LEFT JOIN etiquetas t ON t.cuenta = a.cuenta "
+        "WHERE a.momento_ms >= ? GROUP BY a.accion, 3", (desde,))
+    ultimas_acciones = memoria.consulta(
+        "SELECT a.momento_ms, a.accion, a.cuenta, a.texto, a.pestana, a.duracion_ms, t.etiqueta "
+        "FROM acciones a LEFT JOIN etiquetas t ON t.cuenta = a.cuenta "
+        "WHERE a.momento_ms >= ? ORDER BY a.momento_ms DESC LIMIT 40", (desde,))
     en_uso = [f["etiqueta"] for f in memoria.consulta("SELECT DISTINCT etiqueta FROM etiquetas ORDER BY etiqueta")]
     etiquetas = ETIQUETAS_BASE + [x for x in en_uso if x not in ETIQUETAS_BASE]
     pendientes = memoria.consulta(
@@ -294,7 +365,8 @@ def datos_espejo(memoria: Memoria, dias: int = 30, umbral_ms: int = 3000, zona_s
     return {"dias": dias, "umbral_ms": umbral_ms, "por_dia": por_dia, "cuentas": cuentas,
             "detenciones": detenciones, "tramos": tramos, "anuncios": anuncios,
             "por_etiqueta": por_etiqueta, "por_pestana": por_pestana, "etiquetas": etiquetas,
-            "descripciones_pendientes": pendientes,
+            "descripciones_pendientes": pendientes, "acciones_periodo": acciones_periodo,
+            "ultimas_acciones": ultimas_acciones, "pesos": PESOS_ACCIONES,
             "ultima_sincro": ultima[0] if ultima else None, "eventos_total": total}
 
 

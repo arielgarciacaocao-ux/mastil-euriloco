@@ -10,7 +10,10 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
+import android.graphics.Rect
 import ar.mastil.Config.eventosAnotados
+import ar.mastil.Config.ultimaAccion
+import ar.mastil.Config.ultimaAccionMomento
 import ar.mastil.Config.ultimoContactoX
 import ar.mastil.Config.ultimoDiagnostico
 import ar.mastil.Config.ultimoPostLeido
@@ -41,6 +44,14 @@ class Vigia : AccessibilityService() {
     private var ultimoAnalisis = 0L
     private var analisisPendiente = false
     private var ultimoDiagnosticoGuardado = 0L
+
+    // Acciones: el post al que entraste (y desde cuándo), el último post tocado
+    // (para los menús, que se abren en otra ventana) y un registro corto para no duplicar.
+    private var detalle: Post? = null
+    private var detalleDesde = 0L
+    private var ultimoPostTocado: Post? = null
+    private var ultimoToque = 0L
+    private val recientes = HashMap<String, Long>()
 
     private val pantallaApagada = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = cerrar()
@@ -76,6 +87,14 @@ class Vigia : AccessibilityService() {
 
     override fun onAccessibilityEvent(evento: AccessibilityEvent?) {
         if (evento?.packageName?.toString() != AdaptadorX.PAQUETE) return
+        if (evento.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            try {
+                manejarToque(evento)
+            } catch (e: Exception) {
+                // Un toque mal leído no debe frenar la lectura del feed.
+            }
+            return
+        }
         val ahora = SystemClock.elapsedRealtime()
         if (ahora - ultimoAnalisis < 250) {
             // Demasiados eventos juntos durante el scroll: un solo análisis diferido alcanza.
@@ -115,6 +134,8 @@ class Vigia : AccessibilityService() {
             null
         }
         anotarDiagnostico(post)
+        // De vuelta en el inicio: si habías entrado a un post, ahí termina esa visita.
+        if (detalle != null && (post?.pestana == "para ti" || post?.pestana == "siguiendo")) cerrarDetalle()
         if (post?.clave != actual?.clave) {
             cerrar()
             if (post != null) {
@@ -171,8 +192,92 @@ class Vigia : AccessibilityService() {
         } catch (e: Exception) {
             null
         }
-        if (paquete != AdaptadorX.PAQUETE) cerrar()
-        else if (SystemClock.elapsedRealtime() - desdeReloj > MAX_PERMANENCIA_MS) cerrar()
+        if (paquete != AdaptadorX.PAQUETE) {
+            cerrar()
+            cerrarDetalle()
+        } else if (SystemClock.elapsedRealtime() - desdeReloj > MAX_PERMANENCIA_MS) cerrar()
+    }
+
+    // ------------------------------------------------------------ acciones
+
+    /** Un toque dentro de X: si fue un botón conocido, es una acción; si no, puede ser entrar a algo. */
+    private fun manejarToque(ev: AccessibilityEvent) {
+        val fuente = ev.source
+        val etiqueta = listOf(
+            ev.contentDescription?.toString(),
+            fuente?.contentDescription?.toString(),
+            ev.text?.joinToString(" "),
+            fuente?.text?.toString(),
+        ).firstOrNull { !it.isNullOrBlank() }
+        val raiz = rootInActiveWindow
+        var post: Post? = null
+        if (fuente != null && raiz != null && raiz.packageName?.toString() == AdaptadorX.PAQUETE) {
+            val r = Rect()
+            fuente.getBoundsInScreen(r)
+            post = AdaptadorX.postEn(raiz, r.centerX(), r.centerY())
+        }
+        val ahora = SystemClock.elapsedRealtime()
+        if (post != null) {
+            ultimoPostTocado = post
+            ultimoToque = ahora
+        }
+        // Los menús («No me interesa», «Silenciar») se abren en otra ventana: se atribuyen
+        // al último post tocado, si fue hace poco.
+        val reciente = if (ahora - ultimoToque < 30_000) ultimoPostTocado else null
+        val objetivo = post ?: reciente ?: actual
+        val accion = Acciones.clasificar(etiqueta)
+        if (accion != null) {
+            registrarAccion(accion, objetivo, null)
+            return
+        }
+        if (objetivo != null) principal.postDelayed({ verificarPantalla(objetivo) }, 1200)
+    }
+
+    /** Un rato después de un toque sin botón: ¿se abrió el detalle de un post o un perfil? */
+    private fun verificarPantalla(objetivo: Post) {
+        val raiz = rootInActiveWindow ?: return
+        if (raiz.packageName?.toString() != AdaptadorX.PAQUETE) return
+        when (Acciones.clasificarPantalla(AdaptadorX.textosPantalla(raiz))) {
+            Acciones.PERFIL -> registrarAccion(Acciones.PERFIL, objetivo, null)
+            Acciones.ENTRAR -> {
+                cerrarDetalle()
+                detalle = objetivo
+                detalleDesde = SystemClock.elapsedRealtime()
+            }
+        }
+    }
+
+    /** Anota la visita a un post con cuánto duró: entrar y quedarse es de las señales más fuertes. */
+    private fun cerrarDetalle() {
+        val post = detalle ?: return
+        detalle = null
+        val duracion = (SystemClock.elapsedRealtime() - detalleDesde).coerceAtMost(MAX_PERMANENCIA_MS)
+        registrarAccion(Acciones.ENTRAR, post, duracion)
+    }
+
+    private fun registrarAccion(accion: String, post: Post?, duracion: Long?) {
+        val ahora = SystemClock.elapsedRealtime()
+        val llave = accion + "|" + (post?.clave ?: "")
+        // El mismo botón dos veces seguidas (o el menú de repost) cuenta una sola vez.
+        if (ahora - (recientes[llave] ?: 0L) < 5000) return
+        recientes[llave] = ahora
+        if (recientes.size > 200) recientes.clear()
+        val registro = JSONObject()
+            .put("tipo", "accion")
+            .put("id", UUID.randomUUID().toString())
+            .put("momento", System.currentTimeMillis())
+            .put("accion", accion)
+            .put("cuenta", post?.cuenta ?: JSONObject.NULL)
+            .put("clave", post?.clave ?: JSONObject.NULL)
+            .put("texto", post?.texto?.take(300) ?: JSONObject.NULL)
+            .put("pestana", post?.pestana ?: JSONObject.NULL)
+            .put("duracion_ms", duracion ?: JSONObject.NULL)
+        try {
+            Registro.agregar(this, registro)
+            ultimaAccion = accion + (post?.cuenta?.let { " · $it" } ?: "")
+            ultimaAccionMomento = System.currentTimeMillis()
+        } catch (e: Exception) {
+        }
     }
 
     /** Cierra el post en curso y, si duró lo suficiente, lo anota. */
@@ -211,6 +316,7 @@ class Vigia : AccessibilityService() {
 
     override fun onDestroy() {
         cerrar()
+        cerrarDetalle()
         principal.removeCallbacksAndMessages(null)
         fondo?.shutdownNow()
         try {

@@ -65,6 +65,34 @@ object AdaptadorX {
         return null
     }
 
+    /** El post que contiene un punto de la pantalla: el que recibió un toque. */
+    fun postEn(raiz: AccessibilityNodeInfo, x: Int, y: Int): Post? {
+        val lista = buscarLista(raiz) ?: return null
+        for (i in 0 until lista.childCount) {
+            val fila = lista.getChild(i) ?: continue
+            val r = Rect()
+            fila.getBoundsInScreen(r)
+            if (y >= r.top && y <= r.bottom && x >= r.left && x <= r.right) return armarPost(fila, r)
+        }
+        return null
+    }
+
+    /** Textos visibles de la pantalla, para reconocer a qué pantalla se entró. */
+    fun textosPantalla(raiz: AccessibilityNodeInfo, maximo: Int = 800): List<String> {
+        val textos = mutableListOf<String>()
+        val cola = ArrayDeque<AccessibilityNodeInfo>()
+        cola.add(raiz)
+        var vistos = 0
+        while (cola.isNotEmpty() && vistos < maximo) {
+            val n = cola.removeFirst()
+            vistos++
+            n.text?.toString()?.let { textos.add(it) }
+            n.contentDescription?.toString()?.let { textos.add(it) }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
+        }
+        return textos
+    }
+
     /**
      * La lista desplazable de mayor superficie: en X, el feed.
      * Acepta cualquier contenedor desplazable con varias filas (RecyclerView, ListView

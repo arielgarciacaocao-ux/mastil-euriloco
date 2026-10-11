@@ -10,6 +10,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
+import ar.mastil.Config.eventosAnotados
+import ar.mastil.Config.ultimoContactoX
+import ar.mastil.Config.ultimoDiagnostico
+import ar.mastil.Config.ultimoPostLeido
+import ar.mastil.Config.ultimoPostTexto
 import ar.mastil.Config.volcadoPedido
 import org.json.JSONObject
 import java.io.File
@@ -34,6 +39,7 @@ class Vigia : AccessibilityService() {
     private var desdeHora = 0L       // hora real: para registrar cuándo fue
     private var ultimoAnalisis = 0L
     private var analisisPendiente = false
+    private var ultimoDiagnosticoGuardado = 0L
 
     private val pantallaApagada = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = cerrar()
@@ -86,8 +92,14 @@ class Vigia : AccessibilityService() {
 
     private fun analizar() {
         ultimoAnalisis = SystemClock.elapsedRealtime()
-        val raiz = rootInActiveWindow ?: return
-        if (raiz.packageName?.toString() != AdaptadorX.PAQUETE) {
+        val raiz = rootInActiveWindow
+        if (raiz == null) {
+            guardarContacto("Llegan eventos de X, pero Android no me deja leer la ventana activa.")
+            return
+        }
+        val paquete = raiz.packageName?.toString()
+        if (paquete != AdaptadorX.PAQUETE) {
+            guardarContacto("Llegan eventos de X, pero la ventana activa es otra ($paquete).")
             cerrar()
             return
         }
@@ -101,6 +113,7 @@ class Vigia : AccessibilityService() {
         } catch (e: Exception) {
             null
         }
+        anotarDiagnostico(post)
         if (post?.clave != actual?.clave) {
             cerrar()
             if (post != null) {
@@ -108,6 +121,28 @@ class Vigia : AccessibilityService() {
                 desdeReloj = SystemClock.elapsedRealtime()
                 desdeHora = System.currentTimeMillis()
             }
+        }
+    }
+
+    private fun guardarContacto(motivo: String) {
+        val ahora = System.currentTimeMillis()
+        if (ahora - ultimoDiagnosticoGuardado < 3000) return
+        ultimoDiagnosticoGuardado = ahora
+        ultimoContactoX = ahora
+        ultimoDiagnostico = motivo
+    }
+
+    /** Guarda, como mucho cada 3 segundos, qué está leyendo: lo muestra la pantalla de Mástil. */
+    private fun anotarDiagnostico(post: Post?) {
+        val ahora = System.currentTimeMillis()
+        if (post == null && ahora - ultimoDiagnosticoGuardado < 3000) return
+        if (post != null && ahora - ultimoPostLeido < 3000) return
+        ultimoDiagnosticoGuardado = ahora
+        ultimoContactoX = ahora
+        ultimoDiagnostico = AdaptadorX.diagnostico
+        if (post != null) {
+            ultimoPostLeido = ahora
+            ultimoPostTexto = ((post.cuenta?.let { "$it: " } ?: "") + post.texto).take(140)
         }
     }
 
@@ -141,6 +176,7 @@ class Vigia : AccessibilityService() {
             .put("clave", post.clave)
         try {
             Registro.agregar(this, evento)
+            eventosAnotados += 1
         } catch (e: Exception) {
             // Sin espacio o archivo ocupado: se pierde este evento, no el servicio.
         }

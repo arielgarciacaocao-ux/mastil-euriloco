@@ -11,8 +11,20 @@ android {
         applicationId = "ar.mastil"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
+    }
+
+    // Firma fija de la etapa de prueba: todas las versiones salen con la misma clave,
+    // así Android deja actualizar encima sin desinstalar. Antes de vender se reemplaza
+    // por una clave guardada como secreto, fuera del repositorio.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("firma-mastil.jks")
+            storePassword = "mastil-etapa1"
+            keyAlias = "mastil"
+            keyPassword = "mastil-etapa1"
+        }
     }
 
     buildTypes {

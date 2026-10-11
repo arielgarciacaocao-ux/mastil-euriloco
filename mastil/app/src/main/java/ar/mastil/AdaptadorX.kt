@@ -24,46 +24,66 @@ object AdaptadorX {
     const val PAQUETE = "com.twitter.android"
 
     private val HANDLE = Regex("@[A-Za-z0-9_]{1,15}")
-    private const val MAX_NODOS = 400
+    private const val MAX_NODOS_PANTALLA = 4000
+    private const val MAX_NODOS_POST = 600
     private const val MAX_TEXTO = 1000
 
+    /** Qué pasó en la última lectura, en palabras: se muestra en la pantalla de Mástil. */
+    @Volatile
+    var diagnostico: String = ""
+        private set
+
     fun postEnfocado(raiz: AccessibilityNodeInfo): Post? {
-        val lista = buscarLista(raiz) ?: return null
+        val lista = buscarLista(raiz)
+        if (lista == null) {
+            diagnostico = "X está abierto, pero no encuentro ninguna lista desplazable en pantalla."
+            return null
+        }
         val marco = Rect()
         lista.getBoundsInScreen(marco)
         val medio = marco.centerY()
+        val clase = lista.className?.toString()?.substringAfterLast('.').orEmpty()
         for (i in 0 until lista.childCount) {
             val fila = lista.getChild(i) ?: continue
             val r = Rect()
             fila.getBoundsInScreen(r)
             if (medio >= r.top && medio <= r.bottom) {
-                return armarPost(fila, r)
+                val post = armarPost(fila, r)
+                diagnostico = if (post != null) "Leyendo bien (lista $clase, ${lista.childCount} filas)."
+                else "Encuentro el feed ($clase), pero la fila del centro no tiene texto legible."
+                return post
             }
         }
+        diagnostico = "Encuentro el feed ($clase, ${lista.childCount} filas), pero ninguna cruza el centro de la pantalla."
         return null
     }
 
-    /** La lista desplazable de mayor superficie: en X, el feed. */
+    /**
+     * La lista desplazable de mayor superficie: en X, el feed.
+     * Acepta cualquier contenedor desplazable con varias filas (RecyclerView, ListView
+     * o las listas de Jetpack Compose, que se presentan con otros nombres).
+     */
     private fun buscarLista(raiz: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         var mejor: AccessibilityNodeInfo? = null
         var mejorArea = 0L
         val cola = ArrayDeque<AccessibilityNodeInfo>()
         cola.add(raiz)
         var vistos = 0
-        while (cola.isNotEmpty() && vistos < MAX_NODOS) {
+        while (cola.isNotEmpty() && vistos < MAX_NODOS_PANTALLA) {
             val n = cola.removeFirst()
             vistos++
             if (n.isScrollable && n.childCount > 1) {
-                val clase = n.className?.toString().orEmpty()
-                if (clase.contains("RecyclerView") || clase.contains("ListView")) {
-                    val r = Rect()
-                    n.getBoundsInScreen(r)
+                val r = Rect()
+                n.getBoundsInScreen(r)
+                // Las listas verticales son más altas que anchas; los carruseles, no.
+                if (r.height() > r.width() / 2) {
                     val area = r.width().toLong() * r.height().toLong()
                     if (area > mejorArea) {
                         mejor = n
                         mejorArea = area
                     }
                 }
+                continue // lo que está dentro del feed son las filas: no hace falta recorrerlas acá
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
         }
@@ -76,7 +96,7 @@ object AdaptadorX {
         val cola = ArrayDeque<AccessibilityNodeInfo>()
         cola.add(fila)
         var vistos = 0
-        while (cola.isNotEmpty() && vistos < MAX_NODOS) {
+        while (cola.isNotEmpty() && vistos < MAX_NODOS_POST) {
             val n = cola.removeFirst()
             vistos++
             n.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { textos.add(it) }

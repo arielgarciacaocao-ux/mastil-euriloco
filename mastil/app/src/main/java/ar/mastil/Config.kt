@@ -52,6 +52,31 @@ object Config {
         get() = prefs(this).getBoolean("volcado_pedido", false)
         set(v) = prefs(this).edit().putBoolean("volcado_pedido", v).apply()
 
+    // ---- diagnóstico: qué está viendo el vigía
+
+    /** Última vez que llegó un evento de pantalla de X. */
+    var Context.ultimoContactoX: Long
+        get() = prefs(this).getLong("ultimo_contacto_x", 0L)
+        set(v) = prefs(this).edit().putLong("ultimo_contacto_x", v).apply()
+
+    /** Última vez que se reconoció un post en el centro de la pantalla. */
+    var Context.ultimoPostLeido: Long
+        get() = prefs(this).getLong("ultimo_post_leido", 0L)
+        set(v) = prefs(this).edit().putLong("ultimo_post_leido", v).apply()
+
+    var Context.ultimoPostTexto: String
+        get() = prefs(this).getString("ultimo_post_texto", "") ?: ""
+        set(v) = prefs(this).edit().putString("ultimo_post_texto", v).apply()
+
+    /** Qué encontró el lector la última vez que X estaba en pantalla. */
+    var Context.ultimoDiagnostico: String
+        get() = prefs(this).getString("ultimo_diagnostico", "") ?: ""
+        set(v) = prefs(this).edit().putString("ultimo_diagnostico", v).apply()
+
+    var Context.eventosAnotados: Long
+        get() = prefs(this).getLong("eventos_anotados", 0L)
+        set(v) = prefs(this).edit().putLong("eventos_anotados", v).apply()
+
     var Context.cuerdasVersion: String
         get() = prefs(this).getString("cuerdas_version", "") ?: ""
         set(v) = prefs(this).edit().putString("cuerdas_version", v).apply()

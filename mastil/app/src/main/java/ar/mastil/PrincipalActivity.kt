@@ -17,7 +17,12 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import ar.mastil.Config.eventosAnotados
 import ar.mastil.Config.ultimaSincro
+import ar.mastil.Config.ultimoContactoX
+import ar.mastil.Config.ultimoDiagnostico
+import ar.mastil.Config.ultimoPostLeido
+import ar.mastil.Config.ultimoPostTexto
 import ar.mastil.Config.volcadoPedido
 import java.io.File
 import java.text.DateFormat
@@ -83,7 +88,27 @@ class PrincipalActivity : Activity() {
                 else "○ Todavía sin emparejar con Euríloco.\n"
             )
             append("Eventos guardados en el teléfono: ${Registro.cantidad(this@PrincipalActivity)}\n")
-            append("Última sincronización: $sincro")
+            append("Eventos anotados desde que se instaló: $eventosAnotados\n")
+            append("Última sincronización: $sincro\n\n")
+            append("Diagnóstico de lectura\n")
+            if (ultimoContactoX == 0L) {
+                append("○ Mástil todavía no recibió nada de la app de X. Abrí X (la app, no el navegador) y scrolleá un poco.")
+            } else {
+                append("Último contacto con X: ${hace(ultimoContactoX)}\n")
+                append("Último post leído: ${if (ultimoPostLeido == 0L) "ninguno todavía" else hace(ultimoPostLeido)}\n")
+                if (ultimoPostTexto.isNotEmpty()) append("«$ultimoPostTexto»\n")
+                append("Lector: $ultimoDiagnostico")
+            }
+        }
+    }
+
+    private fun hace(momento: Long): String {
+        val seg = (System.currentTimeMillis() - momento) / 1000
+        return when {
+            seg < 60 -> "hace $seg s"
+            seg < 3600 -> "hace ${seg / 60} min"
+            seg < 86400 -> "hace ${seg / 3600} h"
+            else -> "hace ${seg / 86400} días"
         }
     }
 
@@ -154,6 +179,7 @@ class PrincipalActivity : Activity() {
         parrafo("Etapa 1 · espejo. Mástil observa cuánto te detenés en cada post de X y se lo cuenta a Euríloco. Todavía no avisa ni toca nada.")
 
         estado = parrafo("")
+        boton("Actualizar estado") { refrescar() }
 
         titulo("1. Activar")
         parrafo("Mástil usa el servicio de accesibilidad para leer la pantalla de X, y solo de X. Si Android dice «ajuste restringido», andá a Ajustes › Apps › Mástil › menú ⋮ › «Permitir ajustes restringidos» y volvé a intentar.")

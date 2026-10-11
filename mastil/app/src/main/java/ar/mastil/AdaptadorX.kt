@@ -22,6 +22,7 @@ data class Post(
     val reposteado: Boolean = false,
     val guardado: Boolean = false,
     val descartado: Boolean = false,
+    val barra: Boolean = false,
 )
 
 /**
@@ -175,7 +176,7 @@ object AdaptadorX {
             tieneImagen = imagen || limpio.medio != null, anuncio = limpio.anuncio, medio = limpio.medio,
             vistas = limpio.vistas, verificada = limpio.verificada, traducido = limpio.traducido,
             marco = Rect(marco), gustado = limpio.gustado, reposteado = limpio.reposteado,
-            guardado = limpio.guardado)
+            guardado = limpio.guardado, barra = limpio.barra)
     }
 
     private val PESTANAS = mapOf("para ti" to "para ti", "for you" to "para ti",

@@ -23,6 +23,11 @@ object Limpieza {
         val guardado: Boolean = false,
         /** La fila es el aviso que deja X después de «No me interesa» (el post desapareció). */
         val descartado: Boolean = false,
+        /**
+         * La barra de botones está en pantalla. Si el post está cortado y no se ve, su estado
+         * no se puede leer: no hay que confundir «no lo veo» con «no está likeado».
+         */
+        val barra: Boolean = false,
     )
 
     /** Frases del aviso que reemplaza un post marcado con «No me interesa». */
@@ -59,12 +64,15 @@ object Limpieza {
         var reposteado = false
         var guardado = false
         var descartado = false
+        var barra = false
         val utiles = mutableListOf<String>()
         for (crudo in textos) {
             // X antepone «· » a la hora («· 1h»): se quita para reconocerla.
             val t = crudo.trim().trimStart('·', ' ').trim()
             val clave = t.lowercase()
             val numero = NUMERO.matchEntire(t)
+            if (clave == "me gusta" || clave == "like" || clave.startsWith("deshacer me gusta") ||
+                clave == "liked" || clave == "unlike") barra = true
             when {
                 clave.startsWith("deshacer") || clave.startsWith("undo") -> {
                     if ("me gusta" in clave || "like" in clave) gustado = true
@@ -92,7 +100,7 @@ object Limpieza {
         val cuerpo = utiles.filter { it != cuenta }.maxByOrNull { it.length }.orEmpty().take(100)
         val firma = if (cuerpo.length >= 25) cuerpo else (cuenta ?: "") + "|" + cuerpo
         return Resultado(texto, cuenta, anuncio, medio, firma, vistas, verificada, traducido,
-            gustado, reposteado, guardado, descartado)
+            gustado, reposteado, guardado, descartado, barra)
     }
 
     /** "4.4K" → 4400, "3,5 M" → 3500000, "1.234" → 1234, "28 mil" → 28000. */

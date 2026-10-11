@@ -242,6 +242,9 @@ class Vigia : AccessibilityService() {
         val reciente = if (ahora - ultimoToque < 30_000) ultimoPostTocado else null
         val objetivo = post ?: reciente ?: actual
         val accion = Acciones.clasificar(etiqueta)
+        // Me gusta, repost y guardar se leen por el cambio de estado del botón, que es seguro;
+        // el aviso del toque puede llegar con el nombre ya cambiado y confundir la dirección.
+        if (accion in POR_ESTADO) return
         if (accion != null) {
             registrarAccion(accion, objetivo, null)
             return
@@ -255,6 +258,7 @@ class Vigia : AccessibilityService() {
     private fun compararEstados(visibles: List<Post>) {
         val actuales = visibles.filter { !it.descartado }
         for (p in actuales) {
+            if (!p.barra) continue // botones fuera de pantalla: el estado no se puede leer
             val bits = (if (p.gustado) 1 else 0) or (if (p.reposteado) 2 else 0) or (if (p.guardado) 4 else 0)
             val antes = estados[p.clave]
             if (antes != null && antes != bits) {
@@ -438,6 +442,8 @@ class Vigia : AccessibilityService() {
 
     companion object {
         private val HANDLE = Regex("@[A-Za-z0-9_]{1,15}")
+        private val POR_ESTADO = setOf("me gusta", "quitar me gusta", "repostear", "deshacer repost",
+            "guardar", "quitar guardado")
         /** Menos que esto es pasar de largo durante el scroll: no se anota. */
         const val MIN_PERMANENCIA_MS = 300L
         /** Más que esto, probablemente el teléfono quedó quieto sobre la mesa. */

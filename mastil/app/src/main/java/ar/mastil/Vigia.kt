@@ -11,7 +11,11 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.graphics.Rect
+import android.content.SharedPreferences
 import ar.mastil.Config.eventosAnotados
+import ar.mastil.Config.ultimaIntervencion
+import ar.mastil.Config.ultimaIntervencionMomento
+import ar.mastil.Config.ultimaPantalla
 import ar.mastil.Config.ultimaAccion
 import ar.mastil.Config.ultimaAccionMomento
 import ar.mastil.Config.ultimoContactoX
@@ -69,6 +73,15 @@ class Vigia : AccessibilityService() {
     private var intervencion: String? = null
     private var avisoMomento = 0L
 
+    /** Escucha el botón «Probar aviso» de la pantalla de Mástil. */
+    private val oyente = SharedPreferences.OnSharedPreferenceChangeListener { _, clave ->
+        if (clave == Config.PRUEBA_AVISO) principal.post {
+            val v = cuerdasVigentes()
+            val formas = if (v.subcategorias.isEmpty()) listOf("visual", "vibracion", "ambos") else v.formas
+            avisador?.avisar(formas, v.intensidad)
+        }
+    }
+
     private val pantallaApagada = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = cerrar()
     }
@@ -91,6 +104,7 @@ class Vigia : AccessibilityService() {
         }
         principal.post(pulso)
         avisador = Avisador(this)
+        Config.prefs(this).registerOnSharedPreferenceChangeListener(oyente)
         fondo = Executors.newSingleThreadScheduledExecutor().also { ex ->
             ex.scheduleWithFixedDelay({
                 try {
@@ -251,6 +265,7 @@ class Vigia : AccessibilityService() {
      * Solo en el inicio: dentro de un post o de un perfil, Mástil no interviene.
      */
     private fun aplicarCuerdas(post: Post, id: String) {
+        if (ultimaPantalla != (post.pestana ?: "")) ultimaPantalla = post.pestana ?: ""
         if (post.pestana !in INICIO) return
         val vigente = cuerdasVigentes()
         if (vigente.subcategorias.isEmpty()) return
@@ -261,12 +276,14 @@ class Vigia : AccessibilityService() {
                 val p = actual
                 if (p != null && actualId == id) {
                     intervencion = "salto"
+                    anotarIntervencion("salto", cuerda, p)
                     saltar(p)
                 }
             }, SALTO_TRAS_MS)
             "aviso" -> principal.postDelayed({
                 if (actual != null && actualId == id) {
                     intervencion = "aviso"
+                    anotarIntervencion("aviso", cuerda, post)
                     avisoMomento = SystemClock.elapsedRealtime()
                     avisador?.avisar(vigente.formas, vigente.intensidad)
                     // Segundo aviso, de la misma intensidad, si seguís en el mismo post.
@@ -276,6 +293,11 @@ class Vigia : AccessibilityService() {
                 }
             }, AVISO_TRAS_MS)
         }
+    }
+
+    private fun anotarIntervencion(accion: String, cuerda: String?, post: Post) {
+        ultimaIntervencion = "$accion por «${cuerda ?: "?"}»" + (post.cuenta?.let { " en $it" } ?: "")
+        ultimaIntervencionMomento = System.currentTimeMillis()
     }
 
     /** Después de un aviso: ¿pasaste de largo enseguida o te quedaste? */
@@ -523,6 +545,10 @@ class Vigia : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        try {
+            Config.prefs(this).unregisterOnSharedPreferenceChangeListener(oyente)
+        } catch (e: Exception) {
+        }
         cerrar()
         cerrarDetalle()
         principal.removeCallbacksAndMessages(null)

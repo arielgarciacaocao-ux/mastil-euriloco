@@ -11,8 +11,8 @@ android {
         applicationId = "ar.mastil"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.4.0"
+        versionCode = 9
+        versionName = "0.4.1"
     }
 
     // Firma fija de la etapa de prueba: todas las versiones salen con la misma clave,

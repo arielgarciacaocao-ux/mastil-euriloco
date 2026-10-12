@@ -195,12 +195,16 @@ object AdaptadorX {
         pestanaMomento = ahora
         var hallada: String? = null
         var vistaAlguna = false
+        var enInicio = false
         val cola = ArrayDeque<AccessibilityNodeInfo>()
         cola.add(raiz)
         var vistos = 0
         while (cola.isNotEmpty() && vistos < 1500 && hallada == null) {
             val n = cola.removeFirst()
             vistos++
+            // X marca su pantalla de inicio con un nombre interno que no desaparece al scrollear
+            // (las pestañas sí: la barra se esconde cuando bajás por el feed).
+            if (n.viewIdResourceName?.contains("home_tabbed") == true) enInicio = true
             val etiqueta = (n.text ?: n.contentDescription)?.toString()?.trim()?.lowercase()
             val pestana = PESTANAS[etiqueta]
             if (pestana != null) {
@@ -215,9 +219,9 @@ object AdaptadorX {
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
         }
-        // Con las pestañas a la vista estás en el inicio, aunque X no diga cuál está elegida
-        // (al scrollear, la barra se encoge). Sin pestañas, es otra pantalla: perfil, búsqueda, un hilo.
-        pestanaCache = hallada ?: if (vistaAlguna) "inicio" else "otra pantalla"
+        // Con la marca del inicio o las pestañas a la vista, estás en el inicio aunque X no diga
+        // cuál pestaña está elegida. Si no, es otra pantalla: perfil, búsqueda, un hilo.
+        pestanaCache = hallada ?: if (vistaAlguna || enInicio) "inicio" else "otra pantalla"
         return pestanaCache
     }
 

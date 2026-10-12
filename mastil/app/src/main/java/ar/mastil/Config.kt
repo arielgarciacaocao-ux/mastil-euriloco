@@ -7,7 +7,7 @@ import java.util.UUID
 
 /** Preferencias de Mástil: con qué Euríloco está emparejado y el estado de la sincronización. */
 object Config {
-    private fun prefs(c: Context): SharedPreferences =
+    fun prefs(c: Context): SharedPreferences =
         c.getSharedPreferences("mastil", Context.MODE_PRIVATE)
 
     /** Direcciones de Euríloco ("ip:puerto"), en el orden en que se prueban. */
@@ -84,6 +84,23 @@ object Config {
     var Context.eventosAnotados: Long
         get() = prefs(this).getLong("eventos_anotados", 0L)
         set(v) = prefs(this).edit().putLong("eventos_anotados", v).apply()
+
+    /** Última vez que Mástil actuó por una cuerda, en palabras, y cuándo. */
+    var Context.ultimaIntervencion: String
+        get() = prefs(this).getString("ultima_intervencion", "") ?: ""
+        set(v) = prefs(this).edit().putString("ultima_intervencion", v).apply()
+
+    var Context.ultimaIntervencionMomento: Long
+        get() = prefs(this).getLong("ultima_intervencion_momento", 0L)
+        set(v) = prefs(this).edit().putLong("ultima_intervencion_momento", v).apply()
+
+    /** En qué pantalla de X cree Mástil que estás (inicio u otra). */
+    var Context.ultimaPantalla: String
+        get() = prefs(this).getString("ultima_pantalla", "") ?: ""
+        set(v) = prefs(this).edit().putString("ultima_pantalla", v).apply()
+
+    /** El botón «Probar aviso» escribe acá; el vigía lo escucha y da un aviso. */
+    const val PRUEBA_AVISO = "prueba_aviso"
 
     var Context.cuerdasVersion: String
         get() = prefs(this).getString("cuerdas_version", "") ?: ""

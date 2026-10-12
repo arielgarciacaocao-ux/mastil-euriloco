@@ -52,7 +52,12 @@ object Sincro {
             // Las cuerdas todavía no actúan en la etapa 1, pero ya se guardan.
             pedir(c, host, "GET", "/api/cuerdas", null)?.let { r ->
                 val json = JSONObject(r)
-                File(c.filesDir, "cuerdas.toml").writeText(json.optString("toml"))
+                json.optJSONObject("cuerdas")?.let { cuerdas ->
+                    val destino = File(c.filesDir, "cuerdas.json")
+                    val temporal = File(c.filesDir, "cuerdas.tmp")
+                    temporal.writeText(cuerdas.toString())
+                    temporal.renameTo(destino)
+                }
                 c.cuerdasVersion = json.optString("version")
             }
             c.ultimaSincro = System.currentTimeMillis()

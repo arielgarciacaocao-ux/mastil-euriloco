@@ -1,0 +1,85 @@
+{
+  "_nota": "Taxonomía inicial de la veda, armada a partir del primer día de datos. Palabras sin tildes ni mayúsculas importan igual. Una palabra que termina en * busca el comienzo («sionis*» encuentra «sionismo» y «sionista»). Acciones: nada, aviso, salto, permitir.",
+  "categorias": [
+    {"id": "publicidad", "nombre": "Publicidad", "subcategorias": [
+      {"id": "pub-internet", "nombre": "Internet y telefonía", "accion": "salto", "solo_anuncios": true,
+       "palabras": ["starlink", "internet", "fibra", "wifi", "movistar", "claro", "personal", "telecentro", "tigo"]},
+      {"id": "pub-finanzas", "nombre": "Finanzas y apps", "accion": "salto", "solo_anuncios": true,
+       "palabras": ["tarjeta", "inversion*", "cripto*", "dolarapp", "arq", "cocos", "mercado pago", "banco", "prestamo*", "billetera", "dolar*"]},
+      {"id": "pub-apuestas", "nombre": "Apuestas y casinos", "accion": "salto", "solo_anuncios": true,
+       "palabras": ["casino*", "apuesta*", "aposta*", "bet", "jugadon", "codere", "bplay", "slots", "tragamonedas"]},
+      {"id": "pub-cursos", "nombre": "Cursos y salud", "accion": "salto", "solo_anuncios": true,
+       "palabras": ["curso*", "capacitacion*", "aprende*", "salud", "clinica*", "springer", "master"]},
+      {"id": "pub-otros", "nombre": "Cualquier otro anuncio", "accion": "salto", "todo_anuncio": true, "palabras": []}
+    ]},
+    {"id": "sexual", "nombre": "Sexual / anzuelo", "subcategorias": [
+      {"id": "sex-spam", "nombre": "Spam porno", "accion": "nada",
+       "palabras": ["porn*", "xxx", "jav", "milf", "xhamster", "xhamter", "bokep", "hentai", "nsfw", "sex"]},
+      {"id": "sex-venta", "nombre": "Venta de contenido", "accion": "nada",
+       "palabras": ["onlyfans*", "only fans", "fansly", "t.me/", "link en bio", "mira mi perfil", "dm abiertos", "habilitado los dm", "media.twimg.show", "contenido exclusivo"]},
+      {"id": "sex-insinuacion", "nombre": "Insinuación", "accion": "nada",
+       "palabras": ["do you like yoga", "💋", "🥵", "🍑", "👅", "aguantes conmigo", "dare to reply", "quien se anima", "senor mayor", "sencillita", "buenas noches"]},
+      {"id": "sex-explicita", "nombre": "Charla sexual explícita", "accion": "nada",
+       "palabras": ["tetas", "culo", "cono", "conos", "pija", "verga", "entrepierna", "lamer", "evaluacion de", "gooner", "chupar*", "follar", "coger", "pornografia"]},
+      {"id": "sex-celebs", "nombre": "Celebridades como cebo", "accion": "nada",
+       "palabras": ["bellucci", "sweeney", "love hewitt", "thiessen", "rebecca ferguson", "celeb girls", "iconic"]},
+      {"id": "sex-ecchi", "nombre": "Anime ecchi", "accion": "nada",
+       "palabras": ["ecchi", "fanservice", "waifu"]},
+      {"id": "sex-arte", "nombre": "Desnudo artístico", "accion": "permitir",
+       "palabras": ["oleo", "oil on canvas", "museo", "museum", "pintura", "painting", "escultura", "sculpture", "goya", "rubens", "tiziano", "modigliani", "arturo noci"]}
+    ]},
+    {"id": "politica", "nombre": "Política", "subcategorias": [
+      {"id": "pol-ar", "nombre": "Argentina", "accion": "nada",
+       "palabras": ["milei", "cristina", "cfk", "kirchner*", "peron*", "kicillof", "macri", "bullrich", "massa", "bregman", "casa rosada", "la rosada", "libertari*", "diputad*", "senado*", "morenismo"]},
+      {"id": "pol-int", "nombre": "Internacional", "accion": "nada",
+       "palabras": ["palestin*", "israel*", "sionis*", "gaza", "lula", "bolsonaro", "trump", "epstein", "putin", "ucrania", "maduro", "mahoma", "islam*"]},
+      {"id": "pol-justicia", "nombre": "Seguridad y justicia", "accion": "nada",
+       "palabras": ["devoto", "detenid*", "presos", "fiscal*", "juez", "carcel", "policia*"]}
+    ]},
+    {"id": "deporte", "nombre": "Fútbol / deporte", "subcategorias": [
+      {"id": "dep-arg", "nombre": "Fútbol argentino", "accion": "nada",
+       "palabras": ["belgrano", "boca", "river", "racing", "independiente", "san lorenzo", "lanus", "granate*", "talleres", "liga profesional", "arbitro", "zelarayan"]},
+      {"id": "dep-int", "nombre": "Fútbol internacional", "accion": "nada",
+       "palabras": ["liverpool", "premier", "fiorentina", "champions", "real madrid", "barcelona", "man city", "corinthians", "mastantuono", "matchday"]},
+      {"id": "dep-idolos", "nombre": "Ídolos y nostalgia", "accion": "nada",
+       "palabras": ["maradona", "messi", "riquelme", "scaloni"]}
+    ]},
+    {"id": "anime", "nombre": "Anime", "subcategorias": [
+      {"id": "ani-op", "nombre": "One Piece", "accion": "nada",
+       "palabras": ["one piece", "luffy", "zoro"]},
+      {"id": "ani-fanart", "nombre": "Fanart", "accion": "nada",
+       "palabras": ["fanart", "fan art", "animeart", "commissions", "comms open"]},
+      {"id": "ani-general", "nombre": "Anime en general", "accion": "nada",
+       "palabras": ["anime", "manga", "dragonball", "dragon ball", "naruto"]}
+    ]},
+    {"id": "musica", "nombre": "Música", "subcategorias": [
+      {"id": "mus-nac", "nombre": "Rock y punk nacional", "accion": "nada",
+       "palabras": ["fun people", "fundamentalistas", "fundaok", "redondos", "indio solari", "spinetta", "rock nacional", "punk*"]},
+      {"id": "mus-int", "nombre": "Internacional y clásicos", "accion": "nada",
+       "palabras": ["pink floyd", "morrison", "the doors", "new order", "toten hosen", "beatles", "rock history"]},
+      {"id": "mus-recitales", "nombre": "Recitales y agenda", "accion": "nada",
+       "palabras": ["recital*", "en vivo", "entradas", "gira", "vuelve al pais"]}
+    ]},
+    {"id": "ciencia", "nombre": "Ciencia / curiosidades", "subcategorias": [
+      {"id": "cie-ing", "nombre": "Ingeniería y procesos", "accion": "nada",
+       "palabras": ["ingenier*", "metodo*", "friccion", "buque", "maquina*", "harikasi"]},
+      {"id": "cie-astro", "nombre": "Astronomía", "accion": "nada",
+       "palabras": ["3i/atlas", "cosmolog*", "agujero negro", "black hole", "nasa", "galaxia*", "planeta*"]},
+      {"id": "cie-mate", "nombre": "Matemática", "accion": "nada",
+       "palabras": ["matematic*", "math", "parabola", "teorema", "ecuacion*"]},
+      {"id": "cie-diy", "nombre": "Trucos y arreglos caseros", "accion": "nada",
+       "palabras": ["se puede reparar", "truco*", "bombilla", "como hacer", "reparaciones"]}
+    ]},
+    {"id": "violencia", "nombre": "Violencia / morbo", "subcategorias": [
+      {"id": "vio-accidentes", "nombre": "Accidentes", "accion": "nada",
+       "palabras": ["accidente*", "choque", "atropell*", "a gran velocidad"]},
+      {"id": "vio-guerra", "nombre": "Guerra y drones", "accion": "nada",
+       "palabras": ["drones", "dron", "misil*", "bombardeo*", "guerra"]},
+      {"id": "vio-crimen", "nombre": "Crimen y narco", "accion": "nada",
+       "palabras": ["narco*", "asesin*", "crimen", "sicario*", "masacre", "murder", "ejecucion*"]},
+      {"id": "vio-humor-negro", "nombre": "Humor negro", "accion": "nada",
+       "palabras": ["dark humour", "dark humor", "humor negro"]}
+    ]}
+  ],
+  "avisos": {"formas": ["visual", "vibracion", "ambos"], "intensidad": 0.5}
+}

@@ -67,13 +67,47 @@
   select.etiqueta { font-size: 13px; padding: 2px 6px; }
   select.etiqueta.puesta { border-color: var(--acento); color: var(--acento); font-weight: 600; }
   @media (max-width: 560px) { .post { grid-template-columns: 80px 1fr; } .mini { width: 80px; height: 80px; } }
+  details.cat { border-top: 1px solid var(--linea); padding: 10px 0; }
+  details.cat:first-of-type { border-top: 0; }
+  details.cat > summary { cursor: pointer; display: grid; grid-template-columns: 1fr 160px 110px; gap: 12px;
+                          align-items: center; list-style: none; }
+  details.cat > summary::-webkit-details-marker { display: none; }
+  details.cat .catnombre::before { content: "▸ "; color: var(--suave); }
+  details.cat[open] .catnombre::before { content: "▾ "; }
+  .catnombre { font-weight: 650; }
+  .barrita { height: 8px; border-radius: 4px; background: var(--barra-suave); position: relative; overflow: hidden; }
+  .barrita > i { position: absolute; inset: 0 auto 0 0; background: var(--acento); border-radius: 4px; }
+  .subs { margin: 8px 0 4px 18px; }
+  .sub { display: grid; grid-template-columns: minmax(140px, 1.3fr) 1.4fr 1.2fr 120px 80px; gap: 10px;
+         align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--linea); font-size: 14px; }
+  .sub:last-child { border-bottom: 0; }
+  .sub .peso { color: var(--suave); font-size: 13px; }
+  select.accion { font-size: 13px; padding: 2px 6px; width: 100%; }
+  select.accion.aviso { border-color: var(--alerta); color: var(--alerta); font-weight: 600; }
+  select.accion.salto { border-color: var(--negativo); color: var(--negativo); font-weight: 600; }
+  select.accion.permitir { border-color: var(--acento); color: var(--acento); font-weight: 600; }
+  .editor { grid-column: 1 / -1; background: var(--fondo); border-radius: 8px; padding: 10px 12px; }
+  .editor textarea, .editor input[type=text] { width: 100%; font: inherit; font-size: 13px; color: var(--tinta);
+         background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 6px; padding: 6px; }
+  .editor .fila { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; }
+  .simul { font-size: 13px; color: var(--suave); margin-top: 8px; }
+  .simul li { margin: 2px 0; }
+  .pendiente { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px 10px;
+               border: 1px solid var(--alerta); border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+  .aviso-msj { font-size: 13px; color: var(--alerta); min-height: 1.2em; }
+  @media (max-width: 760px) {
+    details.cat > summary { grid-template-columns: 1fr 90px; }
+    details.cat > summary .barrita { display: none; }
+    .sub { grid-template-columns: 1fr 110px; }
+    .sub .peso, .sub .efecto { grid-column: 1 / -1; }
+  }
   .marca { font-size: 11px; font-weight: 600; color: var(--alerta); border: 1px solid var(--alerta);
            border-radius: 4px; padding: 0 4px; text-transform: uppercase; letter-spacing: .03em; }
 </style>
 </head>
 <body>
 <main>
-  <header><h1>Euríloco</h1><span class="rotulo">espejo · etapa 1 · v0.3</span></header>
+  <header><h1>Euríloco</h1><span class="rotulo">espejo y veda · v0.4</span></header>
   <p class="lema">Lo que tu atención hizo cuando no estabas mirando. Mástil observa; acá lo ves con calma.</p>
 
   <div class="controles">
@@ -104,6 +138,23 @@
 
   <section class="tarjeta">
     <div class="grilla" id="resumen"></div>
+  </section>
+
+  <section class="tarjeta" id="veda">
+    <h2>Veda: lo que no querés que te enganche</h2>
+    <p class="nota">Elegí la acción en cada subcategoría, de lo más fino a lo general. <b>Aviso</b>: un destello o una vibración suave.
+      <b>Salto</b>: Mástil pasa de largo solo. <b>Permitir</b>: excepción que gana sobre todo lo demás.
+      Apretar es inmediato; aflojar pide un motivo y espera 24 horas. El peso es de los últimos <span id="veda-dias">7</span> días.</p>
+    <div id="veda-pendientes"></div>
+    <div class="controles">
+      <span>Formas de aviso:</span>
+      <label><input type="checkbox" class="forma" value="visual"> destello</label>
+      <label><input type="checkbox" class="forma" value="vibracion"> vibración suave</label>
+      <label><input type="checkbox" class="forma" value="ambos"> los dos</label>
+      <label>intensidad <input type="range" id="intensidad" min="0.1" max="1" step="0.1"></label>
+    </div>
+    <div class="aviso-msj" id="veda-msj"></div>
+    <div id="veda-menu"></div>
   </section>
 
   <section class="tarjeta">
@@ -264,6 +315,199 @@ async function cargar() {
 
 let ultimo = null;
 
+// ------------------------------------------------------------------ veda
+let veda = null;
+const abiertas = new Set();
+const editando = new Set();
+
+async function cargarVeda() {
+  const r = await fetch(`/panel/veda?dias=${Math.min(30, Number($("dias").value))}`);
+  veda = await r.json();
+  $("veda-dias").textContent = veda.dias;
+  pintarVeda();
+}
+
+function pesoTexto(p) {
+  if (!p || !p.posts) return "sin coincidencias";
+  return `${p.posts} posts · ${fmtMin(p.ms)} · ${p.detenciones} detenciones`;
+}
+
+function efectoTexto(e) {
+  if (!e) return "";
+  const partes = [];
+  if (e.saltos) partes.push(`${e.saltos} saltos`);
+  if (e.avisos) {
+    const resp = (e.pasaste || 0) + (e.quedaste || 0);
+    partes.push(`${e.avisos} avisos` + (resp ? ` · pasaste de largo ${Math.round(100 * (e.pasaste || 0) / resp)} %` : ""));
+  }
+  return partes.join(" · ");
+}
+
+function pintarVeda() {
+  const total = veda.total.ms || 1;
+  $("veda-pendientes").innerHTML = veda.pendientes.map(p => {
+    const falta = p.efecto_ms - Date.now();
+    const listo = falta <= 0;
+    const horas = Math.ceil(falta / 3600000);
+    return `<div class="pendiente"><b>Aflojar «${esc((p.nueva || p.antes || {}).nombre || p.subcategoria)}»</b>
+      <span class="rotulo">motivo: «${esc(p.motivo)}»</span>
+      <span>${listo ? "ya se puede confirmar" : `se puede confirmar en ${horas} h`}</span>
+      <button data-pend="${esc(p.id)}" data-acc="confirmar" ${listo ? "" : "disabled"}>Confirmar</button>
+      <button data-pend="${esc(p.id)}" data-acc="cancelar">Cancelar</button></div>`;
+  }).join("");
+  const formas = new Set(veda.avisos?.formas || []);
+  document.querySelectorAll("input.forma").forEach(c => c.checked = formas.has(c.value));
+  $("intensidad").value = veda.avisos?.intensidad ?? 0.5;
+
+  const cats = [...veda.categorias].sort((a, b) => b.peso_ms - a.peso_ms);
+  const maximo = Math.max(...cats.map(c => c.peso_ms), 1);
+  $("veda-menu").innerHTML = cats.map(cat => {
+    const subs = [...cat.subcategorias].sort((a, b) => b.peso.ms - a.peso.ms);
+    const activas = subs.filter(s => s.accion !== "nada").length;
+    return `<details class="cat" data-cat="${esc(cat.id)}" ${abiertas.has(cat.id) ? "open" : ""}>
+      <summary><span class="catnombre">${esc(cat.nombre)} <span class="rotulo">${activas ? `· ${activas} activas` : ""}</span></span>
+        <span class="barrita"><i style="width:${100 * cat.peso_ms / maximo}%"></i></span>
+        <span class="rotulo">${fmtMin(cat.peso_ms)} · ${Math.round(100 * cat.peso_ms / total)} %</span></summary>
+      <div class="subs">${subs.map(s => filaSub(cat.id, s)).join("")}
+        <div class="sub"><button data-nueva="${esc(cat.id)}">+ Nueva subcategoría</button></div>
+      </div></details>`;
+  }).join("") + `<p class="nota" style="margin-top:10px">Sin categoría: ${veda.sin_categoria.posts} posts, ${fmtMin(veda.sin_categoria.ms)}
+      (${Math.round(100 * veda.sin_categoria.ms / total)} %). Son sobre todo imágenes sin texto: etiquetá sus cuentas o sumá palabras.</p>`;
+}
+
+function filaSub(catId, s) {
+  const opciones = ["nada", "aviso", "salto", "permitir"].map(a =>
+    `<option value="${a}" ${a === s.accion ? "selected" : ""}>${a}</option>`).join("");
+  const abierto = editando.has(s.id);
+  return `<div class="sub" data-sub="${esc(s.id)}" data-cat="${esc(catId)}">
+    <span>${esc(s.nombre)}</span>
+    <span class="peso">${pesoTexto(s.peso)}</span>
+    <span class="peso efecto">${efectoTexto(s.efecto)}</span>
+    <select class="accion ${esc(s.accion)}">${opciones}</select>
+    <button class="editar">${abierto ? "cerrar" : "palabras"}</button>
+    ${abierto ? editorSub(s) : ""}
+  </div>`;
+}
+
+function editorSub(s) {
+  return `<div class="editor">
+    <label>Nombre <input type="text" class="e-nombre" value="${esc(s.nombre)}"></label>
+    <label>Palabras o frases, una por línea (* al final busca el comienzo: <code>sionis*</code>)
+      <textarea class="e-palabras" rows="4">${esc((s.palabras || []).join("\n"))}</textarea></label>
+    <label>Cuentas, una por línea <textarea class="e-cuentas" rows="2">${esc((s.cuentas || []).join("\n"))}</textarea></label>
+    <div class="fila">
+      <label><input type="checkbox" class="e-solo" ${s.solo_anuncios ? "checked" : ""}> solo si es anuncio</label>
+      <label><input type="checkbox" class="e-todo" ${s.todo_anuncio ? "checked" : ""}> cualquier anuncio</label>
+      <button class="simular">Simular</button>
+      <button class="guardar">Guardar</button>
+      <button class="eliminar">Eliminar</button>
+    </div>
+    <div class="simul"></div>
+  </div>`;
+}
+
+function leerEditor(fila, base) {
+  const ed = fila.querySelector(".editor");
+  const lista = (sel) => ed.querySelector(sel).value.split(/\n|,/).map(x => x.trim()).filter(Boolean);
+  return { ...base, nombre: ed.querySelector(".e-nombre").value.trim(), palabras: lista(".e-palabras"),
+           cuentas: lista(".e-cuentas"), solo_anuncios: ed.querySelector(".e-solo").checked,
+           todo_anuncio: ed.querySelector(".e-todo").checked };
+}
+
+function buscarSub(id) {
+  for (const c of veda.categorias) for (const s of c.subcategorias) if (s.id === id) return s;
+  return null;
+}
+
+async function postVeda(ruta, datos) {
+  const r = await fetch("/panel/veda/" + ruta, { method: "POST", headers: {"Content-Type": "application/json"},
+                                                body: JSON.stringify(datos) });
+  return r.json();
+}
+
+async function enviarCambio(ruta, datos) {
+  let r = await postVeda(ruta, datos);
+  if (r.estado === "falta_motivo") {
+    const motivo = prompt("Esto afloja una cuerda. Escribí por qué (se te va a mostrar al confirmar, en 24 horas):");
+    if (!motivo || motivo.trim().length < r.minimo) {
+      $("veda-msj").textContent = `Sin un motivo de al menos ${r.minimo} letras, no se afloja nada.`;
+      return cargarVeda();
+    }
+    r = await postVeda(ruta, { ...datos, motivo });
+  }
+  $("veda-msj").textContent = r.error ? `No se pudo: ${r.error}`
+    : r.estado === "pendiente" ? "Pedido de aflojar anotado: vas a poder confirmarlo en 24 horas. Mientras tanto, la cuerda sigue igual."
+    : r.estado === "aplicado" ? "Listo. Mástil lo recibe en la próxima sincronización." : "";
+  return cargarVeda();
+}
+
+$("veda-menu").addEventListener("toggle", (ev) => {
+  const d = ev.target.closest("details.cat");
+  if (d) d.open ? abiertas.add(d.dataset.cat) : abiertas.delete(d.dataset.cat);
+}, true);
+
+$("veda-menu").addEventListener("change", (ev) => {
+  const sel = ev.target.closest("select.accion");
+  if (!sel) return;
+  const fila = sel.closest(".sub");
+  const s = buscarSub(fila.dataset.sub);
+  enviarCambio("subcategoria", { categoria: fila.dataset.cat, subcategoria: { ...s, accion: sel.value } });
+});
+
+$("veda-menu").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button");
+  if (!b) return;
+  if (b.dataset.nueva) {
+    const nombre = prompt("Nombre de la subcategoría nueva:");
+    if (!nombre) return;
+    const id = "sub-" + Math.random().toString(16).slice(2, 10);
+    await enviarCambio("subcategoria", { categoria: b.dataset.nueva,
+      subcategoria: { id, nombre, accion: "nada", palabras: [], cuentas: [] } });
+    editando.add(id); abiertas.add(b.dataset.nueva);
+    return pintarVeda();
+  }
+  const fila = b.closest(".sub");
+  if (!fila || !fila.dataset.sub) return;
+  const s = buscarSub(fila.dataset.sub);
+  if (b.classList.contains("editar")) {
+    editando.has(s.id) ? editando.delete(s.id) : editando.add(s.id);
+    return pintarVeda();
+  }
+  if (b.classList.contains("simular")) {
+    const r = await postVeda("simular", { subcategoria: leerEditor(fila, s), dias: veda.dias });
+    fila.querySelector(".simul").innerHTML = `En los últimos ${veda.dias} días habría actuado sobre <b>${r.posts}</b> posts
+      (${fmtMin(r.ms)}, ${r.detenciones} detenciones largas).` +
+      (r.ejemplos.length ? `<ul>${r.ejemplos.map(e => `<li>${esc(e.cuenta || "—")}: ${esc(e.texto)} <span class="rotulo">${fmtSeg(e.permanencia_ms)}</span></li>`).join("")}</ul>` : "");
+    return;
+  }
+  if (b.classList.contains("guardar")) {
+    editando.delete(s.id);
+    return enviarCambio("subcategoria", { categoria: fila.dataset.cat, subcategoria: leerEditor(fila, s) });
+  }
+  if (b.classList.contains("eliminar")) {
+    if (!confirm(`¿Eliminar «${s.nombre}»?`)) return;
+    editando.delete(s.id);
+    return enviarCambio("eliminar", { categoria: fila.dataset.cat, id: s.id });
+  }
+});
+
+$("veda-pendientes").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button[data-pend]");
+  if (!b) return;
+  const r = await postVeda("pendiente", { id: b.dataset.pend, accion: b.dataset.acc });
+  $("veda-msj").textContent = r.estado === "aplicado" ? "Aflojado. Mástil lo recibe en la próxima sincronización."
+    : r.estado === "cancelado" ? "Pedido cancelado: la cuerda queda como estaba." : (r.error || "");
+  cargarVeda();
+});
+
+async function guardarAvisos() {
+  const formas = [...document.querySelectorAll("input.forma:checked")].map(c => c.value);
+  await postVeda("avisos", { formas, intensidad: Number($("intensidad").value) });
+  $("veda-msj").textContent = "Formas de aviso guardadas.";
+}
+document.querySelectorAll("input.forma").forEach(c => c.addEventListener("change", guardarAvisos));
+$("intensidad").addEventListener("change", guardarAvisos);
+
 const NEGATIVAS = new Set(["no me interesa", "silenciar", "bloquear", "denunciar", "quitar me gusta",
   "deshacer repost", "quitar guardado", "dejar de seguir"]);
 
@@ -382,6 +626,8 @@ $("emparejar").addEventListener("click", async () => {
   $("enlace").textContent = d.enlace;
 });
 cargar();
+cargarVeda();
+$("dias").addEventListener("change", cargarVeda);
 // Refresca solo cada minuto, y nunca mientras estás eligiendo una etiqueta.
 setInterval(() => { if (!document.activeElement?.matches?.("select.etiqueta")) cargar(); }, 60000);
 </script>

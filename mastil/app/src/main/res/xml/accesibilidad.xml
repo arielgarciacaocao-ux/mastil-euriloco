@@ -6,6 +6,7 @@
     android:accessibilityFlags="flagReportViewIds|flagIncludeNotImportantViews"
     android:canRetrieveWindowContent="true"
     android:canTakeScreenshot="true"
+    android:canPerformGestures="true"
     android:description="@string/descripcion_accesibilidad"
     android:notificationTimeout="200"
     android:packageNames="com.twitter.android" />

@@ -61,6 +61,14 @@ class Vigia : AccessibilityService() {
     private var pantalla = "inicio"
     private var ultimaRevisionPantalla = 0L
 
+    // La veda: las cuerdas vigentes y lo que se hizo con el post en curso.
+    private var juego = Cuerdas.VACIO
+    private var juegoModificado = 0L
+    private var avisador: Avisador? = null
+    private var actualCuerda: String? = null
+    private var intervencion: String? = null
+    private var avisoMomento = 0L
+
     private val pantallaApagada = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = cerrar()
     }
@@ -82,6 +90,7 @@ class Vigia : AccessibilityService() {
             registerReceiver(pantallaApagada, filtro)
         }
         principal.post(pulso)
+        avisador = Avisador(this)
         fondo = Executors.newSingleThreadScheduledExecutor().also { ex ->
             ex.scheduleWithFixedDelay({
                 try {
@@ -151,7 +160,7 @@ class Vigia : AccessibilityService() {
         }
         anotarDiagnostico(post)
         // De vuelta en el inicio: si habías entrado a un post, ahí termina esa visita.
-        if (detalle != null && (post?.pestana == "para ti" || post?.pestana == "siguiendo")) cerrarDetalle()
+        if (detalle != null && post?.pestana in INICIO) cerrarDetalle()
         if (post?.clave != actual?.clave) {
             cerrar()
             if (post != null) {
@@ -160,6 +169,11 @@ class Vigia : AccessibilityService() {
                 desdeReloj = SystemClock.elapsedRealtime()
                 desdeHora = System.currentTimeMillis()
                 programarCaptura(actualId)
+                try {
+                    aplicarCuerdas(post, actualId)
+                } catch (e: Exception) {
+                    // Una cuerda que falla no debe frenar la lectura.
+                }
             }
         } else if (post != null) {
             actual = post // mismo post: se actualiza su posición y sus contadores
@@ -212,6 +226,81 @@ class Vigia : AccessibilityService() {
             cerrar()
             cerrarDetalle()
         } else if (SystemClock.elapsedRealtime() - desdeReloj > MAX_PERMANENCIA_MS) cerrar()
+    }
+
+    // ------------------------------------------------------------ veda
+
+    /** Relee las cuerdas si Euríloco mandó una versión nueva. */
+    private fun cuerdasVigentes(): Cuerdas.Juego {
+        val f = File(filesDir, "cuerdas.json")
+        val modificado = if (f.exists()) f.lastModified() else 0L
+        if (modificado != juegoModificado) {
+            juegoModificado = modificado
+            juego = try {
+                if (modificado == 0L) Cuerdas.VACIO else Cuerdas.desdeJson(f.readText())
+            } catch (e: Exception) {
+                Cuerdas.VACIO
+            }
+        }
+        return juego
+    }
+
+    /**
+     * Un post nuevo llegó al centro: si una cuerda lo reconoce, se programa su acción.
+     * Se espera un instante para no reaccionar a lo que pasa de largo en pleno scroll.
+     * Solo en el inicio: dentro de un post o de un perfil, Mástil no interviene.
+     */
+    private fun aplicarCuerdas(post: Post, id: String) {
+        if (post.pestana !in INICIO) return
+        val vigente = cuerdasVigentes()
+        if (vigente.subcategorias.isEmpty()) return
+        val (cuerda, accion) = Cuerdas.resolver(vigente, post.texto, post.cuenta, post.anuncio)
+        actualCuerda = cuerda
+        when (accion) {
+            "salto" -> principal.postDelayed({
+                val p = actual
+                if (p != null && actualId == id) {
+                    intervencion = "salto"
+                    saltar(p)
+                }
+            }, SALTO_TRAS_MS)
+            "aviso" -> principal.postDelayed({
+                if (actual != null && actualId == id) {
+                    intervencion = "aviso"
+                    avisoMomento = SystemClock.elapsedRealtime()
+                    avisador?.avisar(vigente.formas, vigente.intensidad)
+                    // Segundo aviso, de la misma intensidad, si seguís en el mismo post.
+                    principal.postDelayed({
+                        if (actual != null && actualId == id) avisador?.avisar(vigente.formas, vigente.intensidad)
+                    }, SEGUNDO_AVISO_MS)
+                }
+            }, AVISO_TRAS_MS)
+        }
+    }
+
+    /** Después de un aviso: ¿pasaste de largo enseguida o te quedaste? */
+    private fun respuestaAlAviso(): String? {
+        if (intervencion != "aviso") return null
+        val despues = SystemClock.elapsedRealtime() - avisoMomento
+        return if (despues < QUEDARSE_MS) "paso" else "quedo"
+    }
+
+    /** Avanza el feed lo justo para que el post vedado salga del centro: un deslizamiento lento. */
+    private fun saltar(post: Post) {
+        val marco = post.marco ?: return
+        val pantalla = resources.displayMetrics
+        val alto = pantalla.heightPixels.toFloat()
+        val x = pantalla.widthPixels * 0.5f
+        val distancia = (marco.bottom - alto / 2 + 80).coerceIn(alto * 0.15f, alto * 0.6f)
+        val desde = alto * 0.8f
+        val camino = android.graphics.Path().apply {
+            moveTo(x, desde)
+            lineTo(x, desde - distancia)
+        }
+        val gesto = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(camino, 0, 450))
+            .build()
+        dispatchGesture(gesto, null, null)
     }
 
     // ------------------------------------------------------------ acciones
@@ -298,7 +387,7 @@ class Vigia : AccessibilityService() {
     private fun revisarPantalla(raiz: android.view.accessibility.AccessibilityNodeInfo, post: Post?) {
         val ahora = SystemClock.elapsedRealtime()
         val pestana = post?.pestana ?: AdaptadorX.pestanaActual(raiz)
-        val enInicio = pestana == "para ti" || pestana == "siguiendo"
+        val enInicio = pestana in INICIO
         if (enInicio) {
             visiblesInicio = AdaptadorX.visibles.filter { !it.descartado }
             if (pantalla != "inicio") {
@@ -416,6 +505,11 @@ class Vigia : AccessibilityService() {
             .put("traducido", post.traducido)
             .put("pestana", post.pestana ?: JSONObject.NULL)
             .put("clave", post.clave)
+            .put("cuerda", actualCuerda ?: JSONObject.NULL)
+            .put("intervencion", intervencion ?: JSONObject.NULL)
+            .put("respuesta", respuestaAlAviso() ?: JSONObject.NULL)
+        actualCuerda = null
+        intervencion = null
         try {
             Registro.agregar(this, evento)
             eventosAnotados += 1
@@ -448,6 +542,13 @@ class Vigia : AccessibilityService() {
         const val MIN_PERMANENCIA_MS = 300L
         /** Más que esto, probablemente el teléfono quedó quieto sobre la mesa. */
         const val MAX_PERMANENCIA_MS = 10L * 60 * 1000
+        private val INICIO = setOf("para ti", "siguiendo", "inicio")
+        /** Esperas antes de actuar, para no reaccionar a lo que pasa de largo en pleno scroll. */
+        const val SALTO_TRAS_MS = 450L
+        const val AVISO_TRAS_MS = 700L
+        const val SEGUNDO_AVISO_MS = 4000L
+        /** Si después del aviso seguís más que esto en el post, te quedaste. */
+        const val QUEDARSE_MS = 2500L
         /** A partir de cuánto tiempo en un mismo post se saca su miniatura. */
         const val CAPTURA_TRAS_MS = 2500L
     }

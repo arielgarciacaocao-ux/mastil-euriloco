@@ -91,7 +91,15 @@ class PrincipalActivity : Activity() {
             )
             append("Eventos guardados en el teléfono: ${Registro.cantidad(this@PrincipalActivity)}\n")
             append("Eventos anotados desde que se instaló: $eventosAnotados\n")
-            append("Última sincronización: $sincro\n\n")
+            append("Última sincronización: $sincro\n")
+            val cuerdas = try {
+                val f = File(filesDir, "cuerdas.json")
+                if (f.exists()) Cuerdas.desdeJson(f.readText()).subcategorias else emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            append("Cuerdas activas: ${cuerdas.count { it.accion == "aviso" }} con aviso, " +
+                "${cuerdas.count { it.accion == "salto" }} con salto, ${cuerdas.count { it.accion == "permitir" }} permisos\n\n")
             append("Diagnóstico de lectura\n")
             if (ultimoContactoX == 0L) {
                 append("○ Mástil todavía no recibió nada de la app de X. Abrí X (la app, no el navegador) y scrolleá un poco.")
@@ -179,7 +187,7 @@ class PrincipalActivity : Activity() {
             textSize = 28f
             paint.isFakeBoldText = true
         }.also { col.addView(it) }
-        parrafo("Etapa 1 · espejo. Mástil observa cuánto te detenés en cada post de X y se lo cuenta a Euríloco. Todavía no avisa ni toca nada.")
+        parrafo("Espejo y veda. Mástil observa cuánto te detenés en cada post de X y se lo cuenta a Euríloco. Si una cuerda del menú de no deseados reconoce un post, te avisa o pasa de largo, según lo que elegiste en el panel.")
 
         estado = parrafo("")
         boton("Actualizar estado") { refrescar() }

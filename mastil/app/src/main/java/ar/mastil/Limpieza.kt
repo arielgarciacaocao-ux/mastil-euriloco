@@ -28,6 +28,8 @@ object Limpieza {
          * no se puede leer: no hay que confundir «no lo veo» con «no está likeado».
          */
         val barra: Boolean = false,
+        /** Es tu propia pantalla (el editor o el menú de cuentas): no se registra. */
+        val propio: Boolean = false,
     )
 
     /** Frases del aviso que reemplaza un post marcado con «No me interesa». */
@@ -65,12 +67,14 @@ object Limpieza {
         var guardado = false
         var descartado = false
         var barra = false
+        var propio = false
         val utiles = mutableListOf<String>()
         for (crudo in textos) {
             // X antepone «· » a la hora («· 1h»): se quita para reconocerla.
             val t = crudo.trim().trimStart('·', ' ').trim()
             val clave = t.lowercase()
             val numero = NUMERO.matchEntire(t)
+            if ("cambiar de cuenta" in clave || "switch account" in clave) propio = true
             if (clave == "me gusta" || clave == "like" || clave.startsWith("deshacer me gusta") ||
                 clave == "liked" || clave == "unlike") barra = true
             when {
@@ -100,7 +104,7 @@ object Limpieza {
         val cuerpo = utiles.filter { it != cuenta }.maxByOrNull { it.length }.orEmpty().take(100)
         val firma = if (cuerpo.length >= 25) cuerpo else (cuenta ?: "") + "|" + cuerpo
         return Resultado(texto, cuenta, anuncio, medio, firma, vistas, verificada, traducido,
-            gustado, reposteado, guardado, descartado, barra)
+            gustado, reposteado, guardado, descartado, barra, propio)
     }
 
     /** "4.4K" → 4400, "3,5 M" → 3500000, "1.234" → 1234, "28 mil" → 28000. */

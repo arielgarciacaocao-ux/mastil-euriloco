@@ -11,7 +11,7 @@ sudo apt-get install -y python3-qrcode >/dev/null || echo "   No se pudo instala
 
 echo "2/4 Copiando Euríloco a $DESTINO..."
 mkdir -p "$DESTINO"
-cp "$ORIGEN/euriloco.py" "$ORIGEN/panel.html" "$DESTINO/"
+cp "$ORIGEN/euriloco.py" "$ORIGEN/veda.py" "$ORIGEN/veda_inicial.json" "$ORIGEN/panel.html" "$DESTINO/"
 
 echo "3/4 Registrando el servicio..."
 mkdir -p "$HOME/.config/systemd/user"

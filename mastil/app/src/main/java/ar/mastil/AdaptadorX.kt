@@ -166,6 +166,7 @@ object AdaptadorX {
             for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
         }
         val limpio = Limpieza.limpiar(textos, MAX_TEXTO)
+        if (limpio.propio) return null
         if (limpio.descartado) {
             // La fila es el aviso de «No me interesa»: se devuelve marcada para que el vigía lo note.
             return Post(clave = "descartado", cuenta = null, texto = "", tieneImagen = false,
@@ -214,8 +215,9 @@ object AdaptadorX {
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { cola.add(it) }
         }
-        // Si no hay pestañas a la vista, es otra pantalla: perfil, búsqueda, un hilo.
-        pestanaCache = hallada ?: if (vistaAlguna) null else "otra pantalla"
+        // Con las pestañas a la vista estás en el inicio, aunque X no diga cuál está elegida
+        // (al scrollear, la barra se encoge). Sin pestañas, es otra pantalla: perfil, búsqueda, un hilo.
+        pestanaCache = hallada ?: if (vistaAlguna) "inicio" else "otra pantalla"
         return pestanaCache
     }
 

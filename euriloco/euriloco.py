@@ -36,7 +36,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-VERSION = "0.3.0"
+import veda as veda_mod
+
+VERSION = "0.4.0"
 PUERTO_POR_DEFECTO = 8737
 MAX_CUERPO = 5 * 1024 * 1024  # 5 MB por lote de eventos
 MAX_TEXTO = 1000              # caracteres guardados por post
@@ -145,7 +147,10 @@ CREATE TABLE IF NOT EXISTS eventos (
     traducido     INTEGER NOT NULL DEFAULT 0,
     pestana       TEXT,
     captura       INTEGER NOT NULL DEFAULT 0,
-    descripcion   TEXT
+    descripcion   TEXT,
+    cuerda        TEXT,
+    intervencion  TEXT,
+    respuesta     TEXT
 );
 CREATE INDEX IF NOT EXISTS eventos_inicio ON eventos(inicio_ms);
 CREATE INDEX IF NOT EXISTS eventos_cuenta ON eventos(cuenta);
@@ -193,7 +198,8 @@ class Memoria:
         columnas = {f[1] for f in self.con.execute("PRAGMA table_info(eventos)")}
         nuevas = [("anuncio", "INTEGER NOT NULL DEFAULT 0"), ("medio", "TEXT"), ("vistas", "INTEGER"),
                   ("verificada", "INTEGER NOT NULL DEFAULT 0"), ("traducido", "INTEGER NOT NULL DEFAULT 0"),
-                  ("pestana", "TEXT"), ("captura", "INTEGER NOT NULL DEFAULT 0"), ("descripcion", "TEXT")]
+                  ("pestana", "TEXT"), ("captura", "INTEGER NOT NULL DEFAULT 0"), ("descripcion", "TEXT"),
+                  ("cuerda", "TEXT"), ("intervencion", "TEXT"), ("respuesta", "TEXT")]
         for nombre, tipo in nuevas:
             if nombre not in columnas:
                 self.con.execute(f"ALTER TABLE eventos ADD COLUMN {nombre} {tipo}")
@@ -217,13 +223,15 @@ class Memoria:
                               fila["permanencia_ms"], fila["cuenta"], fila["texto"],
                               1 if fila["tiene_imagen"] else 0, fila["clave"], ahora,
                               1 if fila["anuncio"] else 0, fila["medio"], fila["vistas"],
-                              1 if fila["verificada"] else 0, 1 if fila["traducido"] else 0, fila["pestana"]))
+                              1 if fila["verificada"] else 0, 1 if fila["traducido"] else 0, fila["pestana"],
+                              fila["cuerda"], fila["intervencion"], fila["respuesta"]))
         with self.candado:
             antes = self.con.total_changes
             self.con.executemany(
                 "INSERT OR IGNORE INTO eventos (id, dispositivo, red, inicio_ms, fin_ms, permanencia_ms,"
                 " cuenta, texto, tiene_imagen, clave, recibido_ms, anuncio, medio, vistas, verificada,"
-                " traducido, pestana) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", filas)
+                " traducido, pestana, cuerda, intervencion, respuesta)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", filas)
             self.con.executemany("INSERT OR IGNORE INTO acciones VALUES (?,?,?,?,?,?,?,?,?,?)", acciones)
             nuevos = self.con.total_changes - antes
             self.con.execute("INSERT INTO sincros VALUES (?,?,?,?)", (ahora, dispositivo, len(eventos), nuevos))
@@ -291,8 +299,12 @@ def validar_evento(e) -> dict | None:
         vistas = None
     pestana = e.get("pestana")
     pestana = str(pestana)[:32] if pestana else None
+    cuerda = str(e["cuerda"])[:40] if e.get("cuerda") else None
+    intervencion = e.get("intervencion") if e.get("intervencion") in ("aviso", "salto") else None
+    respuesta = e.get("respuesta") if e.get("respuesta") in ("paso", "quedo") else None
     return {"anuncio": bool(e.get("anuncio")), "medio": medio, "vistas": vistas,
             "verificada": bool(e.get("verificada")), "traducido": bool(e.get("traducido")), "pestana": pestana,
+            "cuerda": cuerda, "intervencion": intervencion, "respuesta": respuesta,
             "id": id_, "red": red, "inicio": inicio, "fin": fin, "permanencia_ms": permanencia,
             "cuenta": cuenta, "texto": texto, "tiene_imagen": bool(e.get("tiene_imagen")), "clave": clave}
 
@@ -368,6 +380,32 @@ def datos_espejo(memoria: Memoria, dias: int = 30, umbral_ms: int = 3000, zona_s
             "descripciones_pendientes": pendientes, "acciones_periodo": acciones_periodo,
             "ultimas_acciones": ultimas_acciones, "pesos": PESOS_ACCIONES,
             "ultima_sincro": ultima[0] if ultima else None, "eventos_total": total}
+
+
+# ---------------------------------------------------------------- veda
+
+def datos_veda(memoria: Memoria, veda: "veda_mod.Veda", dias: int = 7) -> dict:
+    """El menú de no deseados con el peso real de cada subcategoría y cómo vienen funcionando."""
+    desde = int((time.time() - dias * 86400) * 1000)
+    datos = veda.leer()
+    eventos = memoria.consulta(
+        "SELECT texto, cuenta, anuncio, permanencia_ms FROM eventos WHERE inicio_ms >= ?", (desde,))
+    medidas = veda_mod.medir(eventos, veda_mod.subcategorias_planas(datos))
+    efecto = {f["cuerda"]: f for f in memoria.consulta(
+        "SELECT cuerda, SUM(intervencion = 'aviso') AS avisos, SUM(intervencion = 'salto') AS saltos,"
+        " SUM(respuesta = 'paso') AS pasaste, SUM(respuesta = 'quedo') AS quedaste "
+        "FROM eventos WHERE inicio_ms >= ? AND cuerda IS NOT NULL GROUP BY cuerda", (desde,))}
+    total_ms = sum(e["permanencia_ms"] for e in eventos)
+    for cat in datos["categorias"]:
+        for sub in cat["subcategorias"]:
+            sub["peso"] = medidas["subcategorias"].get(sub["id"], {"posts": 0, "ms": 0, "detenciones": 0})
+            sub["efecto"] = efecto.get(sub["id"])
+        cat["peso_ms"] = medidas["categorias"].get(cat["id"], {"ms": 0})["ms"]
+    datos["sin_categoria"] = medidas["sin_categoria"]
+    datos["total"] = {"posts": len(eventos), "ms": total_ms}
+    datos["dias"] = dias
+    datos["version"] = veda.version()
+    return datos
 
 
 # ---------------------------------------------------------------- miniaturas y descripción
@@ -521,6 +559,7 @@ class Manejador(BaseHTTPRequestHandler):
     memoria: Memoria = None
     dir_config: Path = DIR_CONFIG
     dir_capturas: Path = DIR_DATOS / "capturas"
+    veda: "veda_mod.Veda" = None
     panel_html: str = ""
 
     def log_message(self, formato, *args):
@@ -567,15 +606,23 @@ class Manejador(BaseHTTPRequestHandler):
         if ruta == "/api/estado":
             if not self._autorizado():
                 return self._json(HTTPStatus.UNAUTHORIZED, {"error": "clave inválida"})
-            texto = (self.dir_config / "cuerdas.toml").read_text(encoding="utf-8")
             total = self.memoria.consulta("SELECT COUNT(*) AS n FROM eventos")[0]["n"]
             return self._json(HTTPStatus.OK, {"version": VERSION, "eventos_total": total,
-                                              "cuerdas_version": version_cuerdas(texto)})
+                                              "cuerdas_version": self.veda.version()})
         if ruta == "/api/cuerdas":
             if not self._autorizado():
                 return self._json(HTTPStatus.UNAUTHORIZED, {"error": "clave inválida"})
-            texto = (self.dir_config / "cuerdas.toml").read_text(encoding="utf-8")
-            return self._json(HTTPStatus.OK, {"version": version_cuerdas(texto), "toml": texto})
+            cuerdas = self.veda.para_mastil()
+            # «toml» queda vacío para las versiones viejas de Mástil, que lo esperaban.
+            return self._json(HTTPStatus.OK, {"version": cuerdas["version"], "toml": "", "cuerdas": cuerdas})
+        if ruta == "/panel/veda":
+            if not self._panel_permitido():
+                return self._json(HTTPStatus.FORBIDDEN, {"error": "solo local"})
+            try:
+                dias = max(1, min(365, int(parse_qs(url.query).get("dias", ["7"])[0])))
+            except ValueError:
+                dias = 7
+            return self._json(HTTPStatus.OK, datos_veda(self.memoria, self.veda, dias))
         if ruta in ("/", "/panel"):
             if not self._panel_permitido():
                 return self._json(HTTPStatus.FORBIDDEN, {"error": "el panel solo se abre desde la Raspberry"})
@@ -622,6 +669,8 @@ class Manejador(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path == "/panel/etiqueta":
             return self._post_etiqueta()
+        if url.path.startswith("/panel/veda/"):
+            return self._post_veda(url.path[len("/panel/veda/"):])
         if url.path == "/api/captura":
             if not self._autorizado():
                 return self._json(HTTPStatus.UNAUTHORIZED, {"error": "clave inválida"})
@@ -650,6 +699,33 @@ class Manejador(BaseHTTPRequestHandler):
         recibidos, nuevos = self.memoria.guardar_lote(dispositivo, eventos)
         return self._json(HTTPStatus.OK, {"recibidos": recibidos, "nuevos": nuevos})
 
+    def _post_veda(self, accion: str):
+        """Cambios del menú de no deseados, solo desde el panel local."""
+        if not self._panel_permitido():
+            return self._json(HTTPStatus.FORBIDDEN, {"error": "solo local"})
+        cuerpo = self._leer_cuerpo(200_000)
+        try:
+            datos = json.loads(cuerpo.decode("utf-8")) if cuerpo else {}
+            if accion == "subcategoria":
+                r = self.veda.cambiar(str(datos["categoria"]), datos["subcategoria"], motivo=str(datos.get("motivo", "")))
+            elif accion == "eliminar":
+                r = self.veda.cambiar(str(datos["categoria"]), None, sub_id=str(datos["id"]),
+                                      motivo=str(datos.get("motivo", "")))
+            elif accion == "pendiente":
+                r = self.veda.resolver_pendiente(str(datos["id"]), datos.get("accion") == "confirmar")
+            elif accion == "avisos":
+                r = self.veda.cambiar_avisos(list(datos.get("formas", [])), float(datos.get("intensidad", 0.5)))
+            elif accion == "simular":
+                desde = int((time.time() - int(datos.get("dias", 7)) * 86400) * 1000)
+                eventos = self.memoria.consulta(
+                    "SELECT texto, cuenta, anuncio, permanencia_ms FROM eventos WHERE inicio_ms >= ?", (desde,))
+                r = veda_mod.simular(eventos, datos["subcategoria"])
+            else:
+                return self._json(HTTPStatus.NOT_FOUND, {"error": "no existe"})
+        except (ValueError, KeyError, TypeError, UnicodeDecodeError) as e:
+            return self._json(HTTPStatus.BAD_REQUEST, {"error": str(e) or "formato inválido"})
+        return self._json(HTTPStatus.OK, r)
+
     def _post_etiqueta(self):
         """Etiqueta (o desetiqueta, con etiqueta vacía) una cuenta. Solo desde el panel local."""
         if not self._panel_permitido():
@@ -676,7 +752,8 @@ def crear_servidor(config: dict, dir_config: Path, dir_datos: Path, host: str = 
                    puerto: int = None) -> ThreadingHTTPServer:
     panel = (Path(__file__).with_name("panel.html")).read_text(encoding="utf-8")
     atributos = {"config": config, "memoria": Memoria(dir_datos / "euriloco.db"),
-                 "dir_config": dir_config, "dir_capturas": dir_datos / "capturas", "panel_html": panel}
+                 "dir_config": dir_config, "dir_capturas": dir_datos / "capturas", "panel_html": panel,
+                 "veda": veda_mod.Veda(dir_config, Path(__file__).with_name("veda_inicial.json"))}
     clase = type("ManejadorEuriloco", (Manejador,), atributos)
     return ThreadingHTTPServer((host, config["puerto"] if puerto is None else puerto), clase)
 

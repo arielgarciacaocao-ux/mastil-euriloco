@@ -74,7 +74,11 @@ class PruebaEuriloco(unittest.TestCase):
     def test_cuerdas(self):
         cod, r = self.pedir("/api/cuerdas")
         self.assertEqual(cod, 200)
-        self.assertIn("Cuerdas de Mástil", r["toml"])
+        self.assertEqual(r["toml"], "")
+        ids = {c["id"]: c["accion"] for c in r["cuerdas"]["subcategorias"]}
+        self.assertEqual(ids["pub-otros"], "salto")
+        self.assertEqual(ids["sex-arte"], "permitir")
+        self.assertNotIn("pol-ar", ids)  # «nada» no viaja al teléfono
         self.assertEqual(r["version"], self.pedir("/api/estado")[1]["cuerdas_version"])
 
     def test_espejo(self):
@@ -283,6 +287,82 @@ class PruebaEuriloco(unittest.TestCase):
                                    ("no me interesa", "sin etiqueta"): 1})
         self.assertEqual(len(d["ultimas_acciones"]), 3)
         self.assertEqual(d["pesos"]["no me interesa"], -74.0)
+
+    # ---- 0.4: veda
+
+    def veda_post(self, accion, datos):
+        req = urllib.request.Request(self.base + "/panel/veda/" + accion, data=json.dumps(datos).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def sub(self, sub_id):
+        with urllib.request.urlopen(self.base + "/panel/veda") as r:
+            d = json.loads(r.read())
+        for c in d["categorias"]:
+            for s in c["subcategorias"]:
+                if s["id"] == sub_id:
+                    return c["id"], s, d
+        return None, None, d
+
+    def test_veda_apretar_es_inmediato_y_aflojar_espera(self):
+        cat, s, _ = self.sub("sex-spam")
+        s["accion"] = "aviso"
+        cod, r = self.veda_post("subcategoria", {"categoria": cat, "subcategoria": s})
+        self.assertEqual(r["estado"], "aplicado")
+        s["accion"] = "salto"
+        s["palabras"].append("nuevaspam")
+        self.assertEqual(self.veda_post("subcategoria", {"categoria": cat, "subcategoria": s})[1]["estado"], "aplicado")
+        # aflojar sin motivo: se rechaza; con motivo: queda pendiente y no cambia nada todavía
+        s2 = dict(s, accion="nada")
+        self.assertEqual(self.veda_post("subcategoria", {"categoria": cat, "subcategoria": s2})[1]["estado"], "falta_motivo")
+        cod, r = self.veda_post("subcategoria", {"categoria": cat, "subcategoria": s2, "motivo": "quiero ver si exagero"})
+        self.assertEqual(r["estado"], "pendiente")
+        pid = r["pendiente"]["id"]
+        self.assertEqual(self.sub("sex-spam")[1]["accion"], "salto")
+        self.assertEqual(self.veda_post("pendiente", {"id": pid, "accion": "confirmar"})[1]["estado"], "esperando")
+        # pasadas 24 horas, se puede confirmar
+        v = self.servidor.RequestHandlerClass.veda
+        for p in v.datos["pendientes"]:
+            p["efecto_ms"] -= 25 * 3600 * 1000
+        self.assertEqual(self.veda_post("pendiente", {"id": pid, "accion": "confirmar"})[1]["estado"], "aplicado")
+        self.assertEqual(self.sub("sex-spam")[1]["accion"], "nada")
+
+    def test_veda_permiso_nuevo_es_aflojar(self):
+        import veda
+        self.assertTrue(veda.es_aflojar({"accion": "nada"}, {"accion": "permitir", "palabras": ["x"]}))
+        self.assertFalse(veda.es_aflojar({"accion": "permitir", "palabras": ["x", "y"]}, {"accion": "permitir", "palabras": ["x"]}))
+        self.assertTrue(veda.es_aflojar({"accion": "aviso", "palabras": ["a", "b"]}, {"accion": "aviso", "palabras": ["a"]}))
+        self.assertFalse(veda.es_aflojar({"accion": "aviso", "palabras": ["a"]}, {"accion": "salto", "palabras": ["a", "b"]}))
+        self.assertTrue(veda.es_aflojar({"accion": "salto"}, None))
+        self.assertFalse(veda.es_aflojar({"accion": "permitir"}, None))
+        self.assertFalse(veda.es_aflojar(None, {"accion": "aviso", "palabras": ["z"]}))
+
+    def test_veda_resolver(self):
+        import veda
+        subs = [{"id": "sex", "accion": "aviso", "palabras": ["desnud*"]},
+                {"id": "arte", "accion": "permitir", "palabras": ["oleo"]},
+                {"id": "ads", "accion": "salto", "todo_anuncio": True}]
+        self.assertEqual(veda.resolver(subs, "Desnudo femenino", None, False), ("sex", "aviso"))
+        self.assertEqual(veda.resolver(subs, "Desnudo femenino, óleo", None, False), ("arte", "permitir"))
+        self.assertEqual(veda.resolver(subs, "Desnudo y anuncio", None, True), ("ads", "salto"))
+        self.assertEqual(veda.resolver(subs, "nada que ver", None, False), (None, "nada"))
+
+    def test_veda_peso_simulacion_y_efecto(self):
+        e1 = self.evento(1, 6000, "@Starlink"); e1.update({"anuncio": True, "texto": "Starlink internet"})
+        e2 = self.evento(2, 4000, "@x"); e2.update({"texto": "onlyfans.com/algo", "cuerda": "sex-venta",
+                                                    "intervencion": "aviso", "respuesta": "paso"})
+        self.pedir("/api/eventos", {"eventos": [e1, e2, self.evento(3, 2000)]})
+        cat, s, d = self.sub("pub-internet")
+        self.assertEqual(s["peso"]["posts"], 1)
+        self.assertEqual(self.sub("sex-venta")[1]["efecto"]["pasaste"], 1)
+        self.assertEqual(d["total"]["posts"], 3)
+        cod, r = self.veda_post("simular", {"subcategoria": {"nombre": "prueba", "palabras": ["onlyfans*"]}})
+        self.assertEqual((cod, r["posts"]), (200, 1))
+        self.assertEqual(self.veda_post("subcategoria", {"categoria": "inventada", "subcategoria": s})[0], 400)
 
     def test_texto_largo_se_recorta(self):
         e = self.evento(1, 1000)

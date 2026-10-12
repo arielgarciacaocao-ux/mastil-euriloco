@@ -12,7 +12,9 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.graphics.Rect
 import android.content.SharedPreferences
+import ar.mastil.Config.avisosDados
 import ar.mastil.Config.eventosAnotados
+import ar.mastil.Config.saltosHechos
 import ar.mastil.Config.ultimaIntervencion
 import ar.mastil.Config.ultimaIntervencionMomento
 import ar.mastil.Config.ultimaPantalla
@@ -72,6 +74,11 @@ class Vigia : AccessibilityService() {
     private var actualCuerda: String? = null
     private var intervencion: String? = null
     private var avisoMomento = 0L
+
+    // El post que está en el centro, aunque por un instante el centro caiga entre dos posts.
+    // Un aviso o un salto programado se ejecuta si ese post sigue ahí, sin cancelarse por el parpadeo.
+    private var ultimaClave: String? = null
+    private val yaActuados = LinkedHashMap<String, Long>()
 
     /** Escucha el botón «Probar aviso» de la pantalla de Mástil. */
     private val oyente = SharedPreferences.OnSharedPreferenceChangeListener { _, clave ->
@@ -166,6 +173,7 @@ class Vigia : AccessibilityService() {
         }
         // El aviso de «No me interesa» ocupa una fila, pero no es un post.
         val post = leido?.takeIf { !it.descartado }
+        if (post != null) ultimaClave = post.clave
         try {
             compararEstados(AdaptadorX.visibles)
             revisarPantalla(raiz, post)
@@ -271,28 +279,40 @@ class Vigia : AccessibilityService() {
         if (vigente.subcategorias.isEmpty()) return
         val (cuerda, accion) = Cuerdas.resolver(vigente, post.texto, post.cuenta, post.anuncio)
         actualCuerda = cuerda
+        if (accion != "salto" && accion != "aviso") return
+        // Si el mismo post vuelve al centro enseguida (por ejemplo, después de un parpadeo de
+        // la lectura), no se repite la acción.
+        val ahora = SystemClock.elapsedRealtime()
+        if (ahora - (yaActuados[post.clave] ?: 0L) < 30_000) return
+        val clave = post.clave
         when (accion) {
             "salto" -> principal.postDelayed({
-                val p = actual
-                if (p != null && actualId == id) {
+                if (ultimaClave == clave && SystemClock.elapsedRealtime() - (yaActuados[clave] ?: 0L) > 30_000) {
+                    yaActuados[clave] = SystemClock.elapsedRealtime()
                     intervencion = "salto"
-                    anotarIntervencion("salto", cuerda, p)
-                    saltar(p)
+                    actualCuerda = cuerda
+                    anotarIntervencion("salto", cuerda, post)
+                    saltosHechos += 1
+                    saltar(actual ?: post)
                 }
             }, SALTO_TRAS_MS)
             "aviso" -> principal.postDelayed({
-                if (actual != null && actualId == id) {
+                if (ultimaClave == clave && SystemClock.elapsedRealtime() - (yaActuados[clave] ?: 0L) > 30_000) {
+                    yaActuados[clave] = SystemClock.elapsedRealtime()
                     intervencion = "aviso"
+                    actualCuerda = cuerda
                     anotarIntervencion("aviso", cuerda, post)
+                    avisosDados += 1
                     avisoMomento = SystemClock.elapsedRealtime()
                     avisador?.avisar(vigente.formas, vigente.intensidad)
                     // Segundo aviso, de la misma intensidad, si seguís en el mismo post.
                     principal.postDelayed({
-                        if (actual != null && actualId == id) avisador?.avisar(vigente.formas, vigente.intensidad)
+                        if (ultimaClave == clave) avisador?.avisar(vigente.formas, vigente.intensidad)
                     }, SEGUNDO_AVISO_MS)
                 }
             }, AVISO_TRAS_MS)
         }
+        while (yaActuados.size > 200) yaActuados.remove(yaActuados.keys.first())
     }
 
     private fun anotarIntervencion(accion: String, cuerda: String?, post: Post) {
@@ -571,7 +591,7 @@ class Vigia : AccessibilityService() {
         private val INICIO = setOf("para ti", "siguiendo", "inicio")
         /** Esperas antes de actuar, para no reaccionar a lo que pasa de largo en pleno scroll. */
         const val SALTO_TRAS_MS = 450L
-        const val AVISO_TRAS_MS = 700L
+        const val AVISO_TRAS_MS = 500L
         const val SEGUNDO_AVISO_MS = 4000L
         /** Si después del aviso seguís más que esto en el post, te quedaste. */
         const val QUEDARSE_MS = 2500L

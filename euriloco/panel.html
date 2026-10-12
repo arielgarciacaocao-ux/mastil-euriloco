@@ -379,8 +379,10 @@ function filaSub(catId, s) {
   const opciones = ["nada", "aviso", "salto", "permitir"].map(a =>
     `<option value="${a}" ${a === s.accion ? "selected" : ""}>${a}</option>`).join("");
   const abierto = editando.has(s.id);
+  const pend = veda.pendientes.find(p => p.subcategoria === s.id);
+  const pendTxt = pend ? `<br><span class="rotulo" style="color:var(--alerta)">pendiente: pasar a «${esc(pend.nueva ? pend.nueva.accion : "eliminar")}» · ${pend.efecto_ms <= Date.now() ? "ya se puede confirmar" : "confirmable en " + Math.ceil((pend.efecto_ms - Date.now()) / 3600000) + " h"}</span>` : "";
   return `<div class="sub" data-sub="${esc(s.id)}" data-cat="${esc(catId)}">
-    <span>${esc(s.nombre)}</span>
+    <span>${esc(s.nombre)} <span class="rotulo">(${esc(s.id)})</span>${pendTxt}</span>
     <span class="peso">${pesoTexto(s.peso)}</span>
     <span class="peso efecto">${efectoTexto(s.efecto)}</span>
     <select class="accion ${esc(s.accion)}">${opciones}</select>

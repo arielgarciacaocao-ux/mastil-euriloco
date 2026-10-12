@@ -99,6 +99,14 @@ object Config {
         get() = prefs(this).getString("ultima_pantalla", "") ?: ""
         set(v) = prefs(this).edit().putString("ultima_pantalla", v).apply()
 
+    var Context.avisosDados: Long
+        get() = prefs(this).getLong("avisos_dados", 0L)
+        set(v) = prefs(this).edit().putLong("avisos_dados", v).apply()
+
+    var Context.saltosHechos: Long
+        get() = prefs(this).getLong("saltos_hechos", 0L)
+        set(v) = prefs(this).edit().putLong("saltos_hechos", v).apply()
+
     /** El botón «Probar aviso» escribe acá; el vigía lo escucha y da un aviso. */
     const val PRUEBA_AVISO = "prueba_aviso"
 

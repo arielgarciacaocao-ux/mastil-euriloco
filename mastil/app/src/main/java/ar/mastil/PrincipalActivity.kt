@@ -17,7 +17,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import ar.mastil.Config.avisosDados
 import ar.mastil.Config.eventosAnotados
+import ar.mastil.Config.saltosHechos
 import ar.mastil.Config.ultimaIntervencion
 import ar.mastil.Config.ultimaIntervencionMomento
 import ar.mastil.Config.ultimaPantalla
@@ -102,7 +104,10 @@ class PrincipalActivity : Activity() {
                 emptyList()
             }
             append("Cuerdas activas: ${cuerdas.count { it.accion == "aviso" }} con aviso, " +
-                "${cuerdas.count { it.accion == "salto" }} con salto, ${cuerdas.count { it.accion == "permitir" }} permisos\n\n")
+                "${cuerdas.count { it.accion == "salto" }} con salto, ${cuerdas.count { it.accion == "permitir" }} permisos\n")
+            val conAviso = cuerdas.filter { it.accion == "aviso" }.joinToString(", ") { it.id }
+            append("Con aviso: ${conAviso.ifEmpty { "ninguna" }}\n")
+            append("Avisos dados: $avisosDados · saltos hechos: $saltosHechos\n\n")
             append("Diagnóstico de lectura\n")
             if (ultimoContactoX == 0L) {
                 append("○ Mástil todavía no recibió nada de la app de X. Abrí X (la app, no el navegador) y scrolleá un poco.")

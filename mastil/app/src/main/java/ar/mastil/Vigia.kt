@@ -270,11 +270,11 @@ class Vigia : AccessibilityService() {
     /**
      * Un post nuevo llegó al centro: si una cuerda lo reconoce, se programa su acción.
      * Se espera un instante para no reaccionar a lo que pasa de largo en pleno scroll.
-     * Solo en el inicio: dentro de un post o de un perfil, Mástil no interviene.
+     * Actúa en todo X (inicio, respuestas, hilos, listas, perfiles) salvo mientras escribís.
      */
     private fun aplicarCuerdas(post: Post, id: String) {
         if (ultimaPantalla != (post.pestana ?: "")) ultimaPantalla = post.pestana ?: ""
-        if (post.pestana !in INICIO) return
+        if (pantalla == "responder") return
         val vigente = cuerdasVigentes()
         if (vigente.subcategorias.isEmpty()) return
         val (cuerda, accion) = Cuerdas.resolver(vigente, post.texto, post.cuenta, post.anuncio)

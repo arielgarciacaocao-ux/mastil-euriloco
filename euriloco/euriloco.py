@@ -38,7 +38,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import veda as veda_mod
 
-VERSION = "0.4.0"
+VERSION = "0.4.3"
 PUERTO_POR_DEFECTO = 8737
 MAX_CUERPO = 5 * 1024 * 1024  # 5 MB por lote de eventos
 MAX_TEXTO = 1000              # caracteres guardados por post

@@ -197,7 +197,7 @@ class PrincipalActivity : Activity() {
             textSize = 28f
             paint.isFakeBoldText = true
         }.also { col.addView(it) }
-        parrafo("Espejo y veda. Mástil observa cuánto te detenés en cada post de X y se lo cuenta a Euríloco. Si una cuerda del menú de no deseados reconoce un post, te avisa o pasa de largo, según lo que elegiste en el panel.")
+        parrafo("Espejo y veda. Mástil observa cuánto te detenés en cada post de X y se lo cuenta a Euríloco. Si una cuerda del menú de no deseados reconoce un post, te avisa o pasa de largo, según lo que elegiste en el panel. Actúa en todo X (inicio, respuestas, hilos, perfiles) salvo mientras escribís.")
 
         estado = parrafo("")
         boton("Actualizar estado") { refrescar() }

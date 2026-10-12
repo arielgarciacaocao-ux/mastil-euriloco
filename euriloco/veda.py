@@ -240,6 +240,7 @@ class Veda:
             if nueva is None and antes is None:
                 raise ValueError("no existe esa subcategoría")
             if not es_aflojar(antes, nueva):
+                self._sin_pendiente(objetivo)
                 self._aplicar(cat_id, objetivo, nueva)
                 self._guardar(f"apretar: {objetivo}")
                 return {"estado": "aplicado", "version": self.version()}
@@ -249,9 +250,13 @@ class Veda:
             pendiente = {"id": "p-" + secrets.token_hex(4), "categoria": cat_id, "subcategoria": objetivo,
                          "nueva": nueva, "antes": antes, "motivo": motivo[:300],
                          "creado_ms": ahora, "efecto_ms": ahora + ESPERA_MS, "vence_ms": ahora + VENCE_MS}
+            self._sin_pendiente(objetivo)  # un pedido nuevo reemplaza al anterior
             self.datos["pendientes"].append(pendiente)
             self._guardar(f"pedido de aflojar: {objetivo}")
             return {"estado": "pendiente", "pendiente": pendiente}
+
+    def _sin_pendiente(self, sub_id: str) -> None:
+        self.datos["pendientes"] = [p for p in self.datos["pendientes"] if p["subcategoria"] != sub_id]
 
     def resolver_pendiente(self, pendiente_id: str, confirmar: bool) -> dict:
         with self.candado:
